@@ -1,0 +1,4 @@
+VERDICT: PASS
+
+1. minor | tests/test_config.py (normalize_ollama_url parametrize block, ~line 45-56) | Architecture 4.1 lists both `0.0.0.0` and `[::]` as inputs that must normalize to `127.0.0.1`; only `0.0.0.0` is covered by a test case. Verified manually that `normalize_ollama_url("[::]")` already returns `http://127.0.0.1:11434` correctly, so this is a test-coverage gap, not a bug. Fix: add a parametrize case `("[::]", "http://127.0.0.1:11434")`.
+2. minor | src/llmtr/engine.py:95 (`plan_job`, tone branch) | `plan_job` raises a bare `ValueError` when `mode == Mode.TONE` and `tone is None`, but the function's docstring only documents `EmptySelection`/`TextTooLong` as raised errors. Behavior is correct and tested (`test_plan_job_tone_requires_tone`), just undocumented. Fix: add a one-line `ValueError: tone is None for Mode.TONE` note to the docstring.

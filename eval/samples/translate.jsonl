@@ -1,0 +1,20 @@
+{"id": "t-pl-01", "src": "pl", "text": "Cześć, czy możemy przełożyć dzisiejsze spotkanie na 15:00? Mam konflikt w kalendarzu."}
+{"id": "t-pl-02", "src": "pl", "text": "Wysłałem Ci maila z podsumowaniem sprintu, daj znać czy wszystko się zgadza."}
+{"id": "t-pl-03", "src": "pl", "text": "Dzięki za szybką odpowiedź! Doceniam, że tak szybko to ogarnąłeś."}
+{"id": "t-pl-04", "src": "pl", "text": "Przepraszam za spóźnienie, utknąłem w korkach na obwodnicy."}
+{"id": "t-pl-05", "src": "pl", "text": "Czy ktoś może zerknąć na mój pull request przed końcem dnia? To nic wielkiego, tylko drobna poprawka w dokumentacji."}
+{"id": "t-pl-06", "src": "pl", "text": "Jutro jadę na urlop, wracam w poniedziałek. W razie pilnych spraw piszcie do Kasi."}
+{"id": "t-pl-07", "src": "pl", "text": "Mamy problem na produkcji - serwer API zwraca błędy 500 od około godziny. Sprawdzam logi, dam znać jak coś znajdę."}
+{"id": "t-pl-08", "src": "pl", "text": "Świetna robota na dzisiejszej prezentacji! Klient był bardzo zadowolony z naszego podejścia."}
+{"id": "t-pl-09", "src": "pl", "text": "Przypominam, że termin zgłaszania urlopów na grudzień mija w ten piątek."}
+{"id": "t-pl-10", "src": "pl", "text": "Możesz przesłać mi najnowszą wersję umowy? Chciałbym ją przejrzeć przed jutrzejszym spotkaniem z prawnikiem."}
+{"id": "t-en-01", "src": "en", "text": "Hey team, quick reminder that the retro is moved to 3pm today."}
+{"id": "t-en-02", "src": "en", "text": "Thanks for covering my shift yesterday, I owe you one!"}
+{"id": "t-en-03", "src": "en", "text": "Can someone review my PR before we deploy on Friday? It's a small fix to the login flow."}
+{"id": "t-en-04", "src": "en", "text": "I'll be out of office next week, please reach out to Mark for anything urgent."}
+{"id": "t-en-05", "src": "en", "text": "Great job on the demo! The client loved the new dashboard."}
+{"id": "t-en-06", "src": "en", "text": "We're seeing timeouts on the checkout service since this morning. Investigating now, will update the thread in 30 minutes."}
+{"id": "t-en-07", "src": "en", "text": "Could you send me the updated invoice? I need it for the finance report."}
+{"id": "t-en-08", "src": "en", "text": "Let's sync up tomorrow morning to finalize the roadmap for Q1."}
+{"id": "t-en-09", "src": "en", "text": "The deployment failed again, same error as last time. Rolling back now and opening an incident."}
+{"id": "t-en-10", "src": "en", "text": "Happy birthday! Hope you have a great day with the family."}

@@ -1,0 +1,20 @@
+{"id": "f-pl-01", "src": "pl", "text": "Wczoraj poszłem do sklepu po chleb i masło.", "expected": "Wczoraj poszedłem do sklepu po chleb i masło."}
+{"id": "f-pl-02", "src": "pl", "text": "Czy mozesz przeslac mi ten dokument jak najszybciej?", "expected": "Czy możesz przesłać mi ten dokument jak najszybciej?"}
+{"id": "f-pl-03", "src": "pl", "text": "Spotkanie zostało przełożone poniważ klient poprosił o zmianę terminu.", "expected": "Spotkanie zostało przełożone, ponieważ klient poprosił o zmianę terminu."}
+{"id": "f-pl-04", "src": "pl", "text": "Wysłałam ci wiadomość wczoraj wieczorem ale chyba nie dotarła.", "expected": "Wysłałam ci wiadomość wczoraj wieczorem, ale chyba nie dotarła."}
+{"id": "f-pl-05", "src": "pl", "text": "Zespół pracuje nad nowym rozwiązaniem od dwuch tygodni.", "expected": "Zespół pracuje nad nowym rozwiązaniem od dwóch tygodni."}
+{"id": "f-pl-06", "src": "pl", "text": "Prosze o pilne zatwierdzenie faktury, termin płatnosci mija jutro.", "expected": "Proszę o pilne zatwierdzenie faktury, termin płatności mija jutro."}
+{"id": "f-pl-07", "src": "pl", "text": "Dostałem bardzo ważna wiadomość od klienta.", "expected": "Dostałem bardzo ważną wiadomość od klienta."}
+{"id": "f-pl-08", "src": "pl", "text": "Te dokumenty zostały wysłany do klienta rano.", "expected": "Te dokumenty zostały wysłane do klienta rano."}
+{"id": "f-pl-09", "src": "pl", "text": "Mozemy sie umówić na jutro rano, pasuje ci ta godzina?", "expected": "Możemy się umówić na jutro rano, pasuje ci ta godzina?"}
+{"id": "f-pl-10", "src": "pl", "text": "Jeśli masz czas możesz zerknąć na mój raport przed spotkaniem.", "expected": "Jeśli masz czas, możesz zerknąć na mój raport przed spotkaniem."}
+{"id": "f-pl-11", "src": "pl", "text": "Muszę zadzwonić do klienta żeby ustalić szczegóły zamówienia, bo pomyliłem sie w wyliczeniach.", "expected": "Muszę zadzwonić do klienta, żeby ustalić szczegóły zamówienia, bo pomyliłem się w wyliczeniach."}
+{"id": "f-pl-12", "src": "pl", "text": "Ona zrobił dobrą robotę przy tym projekcie, wszyscy są pod wrażeniem.", "expected": "Ona zrobiła dobrą robotę przy tym projekcie, wszyscy są pod wrażeniem."}
+{"id": "f-en-01", "src": "en", "text": "The report were sent to the client this morning.", "expected": "The report was sent to the client this morning."}
+{"id": "f-en-02", "src": "en", "text": "Can you plase review the attched document before the meeting?", "expected": "Can you please review the attached document before the meeting?"}
+{"id": "f-en-03", "src": "en", "text": "If you have time can you take a look at my PR?", "expected": "If you have time, can you take a look at my PR?"}
+{"id": "f-en-04", "src": "en", "text": "I recieved you're email about the budget, thanks.", "expected": "I received your email about the budget, thanks."}
+{"id": "f-en-05", "src": "en", "text": "There is three issues left on the board before we can ship.", "expected": "There are three issues left on the board before we can ship."}
+{"id": "f-en-06", "src": "en", "text": "We where unable to reproduce the bug on staging.", "expected": "We were unable to reproduce the bug on staging."}
+{"id": "f-en-07", "src": "en", "text": "Its fine dont worry about it we will fix it tomorrow.", "expected": "It's fine, don't worry about it, we will fix it tomorrow."}
+{"id": "f-en-08", "src": "en", "text": "The team have finish the migration earlier then expected.", "expected": "The team has finished the migration earlier than expected."}

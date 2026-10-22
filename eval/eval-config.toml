@@ -1,0 +1,34 @@
+# Config used by eval/run_eval.py. Ollama URL comes from the OLLAMA_HOST env var (set by the
+# sandbox to http://host.docker.internal:11434); [ollama].url below is only the fallback.
+# Tone presets are copied verbatim from the user's ~/.config/llmtr/config.toml
+# (docs/tasks/M5-evaluation.md; "formal" wording updated 2026-10-04 per docs/tasks/M5b-tone-model.md).
+
+[ollama]
+url = "http://localhost:11434"
+timeout = 120.0
+keep_alive = "30m"
+temperature = 0.0
+num_ctx = 4096
+max_chars = 8000
+
+[models]
+translate = "translategemma:12b"
+translate_quality = "translategemma:27b"
+fix = "gemma3"
+tone = "gemma3"
+
+[languages]
+native = "pl"
+other = "en"
+
+[[tone.preset]]
+name = "team"
+instruction = "Informal team message: casual and friendly, short sentences, first names, no stiff formulas or corporate phrases."
+
+[[tone.preset]]
+name = "formal"
+instruction = "Formal business tone: polite, complete sentences, no slang, no casual words (replace 'hey guys', 'hej', 'siema', 'basically', 'gonna', 'tho' and similar with neutral, professional wording). Keep the input's language. Do not add a subject line or signature."
+
+[[tone.preset]]
+name = "concise"
+instruction = "Concise: rewrite noticeably shorter, keeping only the essential message and every fact, name, number, date and link. Remove filler words, apologies and pleasantries. Write in the SAME language as the input text."

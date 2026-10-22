@@ -1,0 +1,26 @@
+{"id": "n-pl-01", "src": "pl", "text": "Szanowni Państwo, uprzejmie informuję, że spotkanie zaplanowane na jutro zostaje przełożone na czwartek z powodu nieprzewidzianych okoliczności. Przepraszam za wszelkie niedogodności."}
+{"id": "n-pl-02", "src": "pl", "text": "ej, widziałeś że build znowu czerwony? jakby ktoś mógł zerknąć to super, bo ja teraz nie mam czasu"}
+{"id": "n-pl-03", "src": "pl", "text": "Dziękuję za wczorajszą prezentację, bardzo mi się podobała. Chciałbym zapytać, czy moglibyśmy omówić szczegóły wdrożenia w przyszłym tygodniu?"}
+{"id": "n-pl-04", "src": "pl", "text": "Sorry za spóźniony fix, ale w końcu znalazłem przyczynę buga - był problem z cache'owaniem na warstwie API."}
+{"id": "n-pl-05", "src": "pl", "text": "Przypominam o konieczności uzupełnienia raportu czasu pracy za bieżący miesiąc do piątku."}
+{"id": "n-pl-06", "src": "pl", "text": "Mega robota zespole! Wdrożenie przeszło bez żadnych problemów, klient jest zachwycony."}
+{"id": "n-pl-07", "src": "pl", "text": "Z przykrością informuję, że z powodów osobistych nie będę mógł uczestniczyć w dzisiejszym spotkaniu. Proszę o przesłanie notatek."}
+{"id": "n-pl-08", "src": "pl", "text": "halo, faktura za zeszły miesiąc chyba poszła z błędnym numerem zamówienia, możesz to sprawdzić jak będziesz miał chwilę?"}
+{"id": "n-pl-09", "src": "pl", "text": "W załączeniu przesyłam zaktualizowaną wersję umowy wraz z poprawkami zgłoszonymi przez dział prawny. Proszę o przesłanie uwag do końca tygodnia."}
+{"id": "n-en-01", "src": "en", "text": "Dear team, please be advised that tomorrow's meeting has been rescheduled to Thursday due to unforeseen circumstances. Apologies for any inconvenience."}
+{"id": "n-en-02", "src": "en", "text": "hey did you see the build is red again? if someone could take a look that'd be great, i'm slammed right now"}
+{"id": "n-en-03", "src": "en", "text": "Thanks for yesterday's presentation, I really enjoyed it. Could we schedule some time next week to discuss the rollout details?"}
+{"id": "n-en-04", "src": "en", "text": "sorry for the late fix, finally found the bug - turned out to be a caching issue in the API layer."}
+{"id": "n-en-05", "src": "en", "text": "Reminder that timesheets for this month are due by Friday."}
+{"id": "n-en-06", "src": "en", "text": "awesome work team! the rollout went through with zero issues, client is thrilled."}
+{"id": "n-en-07", "src": "en", "text": "I regret to inform you that due to personal reasons I will be unable to attend today's meeting. Could someone please share the notes afterward?"}
+{"id": "n-en-08", "src": "en", "text": "hey, last month's invoice might have gone out with the wrong PO number, can you double check when you get a chance?"}
+{"id": "n-en-09", "src": "en", "text": "Please find attached the updated contract with the revisions requested by legal. Kindly send your comments by the end of the week."}
+{"id": "n-pl-10", "src": "pl", "text": "Siema! Widzimy się jutro czy mamy to przełożyć? Dawajcie znać, bo generalnie chciałbym to już ogarnąć."}
+{"id": "n-pl-11", "src": "pl", "text": "hej, sorry że tak późno pisze, zapomniałem kompletnie o tym mailu lol, już wysyłam"}
+{"id": "n-pl-12", "src": "pl", "text": "ziomek, wiesz coś o tym nowym projekcie? bo jakoś nikt mi nic nie powiedział, a chciałbym się ogarnąć"}
+{"id": "n-pl-13", "src": "pl", "text": "siemka wszystkim! generalnie chodzi o to że trzeba ogarnąć te testy do piątku, dajcie znać jak coś"}
+{"id": "n-en-10", "src": "en", "text": "hey guys, so basically we gotta ship this thing by friday, no biggie tho"}
+{"id": "n-en-11", "src": "en", "text": "yo, is anyone free later? gonna need help with the deploy script lol"}
+{"id": "n-en-12", "src": "en", "text": "hey, just a heads up, i'm gonna be late tomorrow, traffic is nuts rn"}
+{"id": "n-en-13", "src": "en", "text": "sup team, basically the client loved it, no cap, we're gonna celebrate fri"}

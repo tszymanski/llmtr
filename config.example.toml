@@ -1,0 +1,54 @@
+# Example llmtr config. Copy to ~/.config/llmtr/config.toml (or $XDG_CONFIG_HOME/llmtr/config.toml)
+# and uncomment/edit what you need. Every key below is optional; a missing file, table or key
+# falls back to the default shown. Unknown keys are ignored.
+
+[ollama]
+url = "http://localhost:11434"     # base URL; OLLAMA_HOST env var overrides this if set
+timeout = 120.0                    # seconds per request (covers a cold 27b start)
+keep_alive = "30m"                 # sent with every request so the model stays loaded
+temperature = 0.0
+num_ctx = 4096
+max_chars = 8000                   # longer selections are refused, not truncated
+
+[models]
+translate = "translategemma:12b"          # llmtr translate
+translate_quality = "translategemma:27b"  # llmtr translate --quality
+fix = "gemma3"                             # llmtr fix
+tone = "gemma3:12b"                        # llmtr tone; better formal Polish (M5b); ~6s reload
+                                            # when alternating with translate on a 16 GB GPU
+
+[languages]
+native = "pl"   # text detected as this language is translated to "other"
+other = "en"    # everything else is translated to "native"; must differ from native
+
+[keys]
+copy = "ctrl+c"         # key llmtr sends to copy the selection (never a trigger)
+paste = "ctrl+v"        # key llmtr sends to paste the result
+start_delay = 0.25      # seconds to wait before sending the copy key (lets Super+Alt be released)
+copy_timeout = 1.0      # seconds to wait for the copied text to appear on the clipboard
+paste_delay = 0.3       # seconds to wait after pasting before restoring the old clipboard
+
+# Per-app key overrides (needs the "Window Calls" GNOME Shell extension; without it only the
+# default [keys] pair above is used). Add one [[keys.override]] table per app/terminal.
+# [[keys.override]]
+# app = ["org.gnome.Terminal", "kitty"]
+# copy = "ctrl+shift+c"
+# paste = "ctrl+shift+v"
+
+# Tone presets for "llmtr tone" / "llmtr tone --next". The built-in "team" preset below is
+# always available even if omitted; add more [[tone.preset]] tables to cycle through them, or
+# redefine "team" itself to replace its instruction.
+[[tone.preset]]
+name = "team"
+instruction = "Informal team message: casual and friendly, short sentences, first names, no stiff formulas or corporate phrases."
+
+# [[tone.preset]]
+# name = "formal"
+# instruction = "Formal business email: polite, complete sentences, no slang."
+
+[notify]
+enabled = true   # false hides progress notifications ("Translating..."); errors/hints still show
+
+[log]
+enabled = true   # false disables the run/error log entirely; no log file is created
+level = "info"   # "debug" | "info" | "error"; LLMTR_LOG_LEVEL env overrides this
