@@ -34,6 +34,25 @@ jobs:
           bash -n install.sh
           bash -n scripts/install-ydotool.sh
 
+  security:
+    name: Security (pip-audit, zizmor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: pip-audit (known CVEs in uv.lock)
+        run: |
+          uv export --locked --format requirements-txt --all-groups --no-emit-project \
+            -o "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit@2.10.1 -r "$RUNNER_TEMP/requirements.txt" --require-hashes --disable-pip
+      - name: zizmor (workflow security)
+        # Non-blocking until task M7-security fixes the 6 known findings; that task removes this line.
+        continue-on-error: true
+        run: uvx zizmor@1.31.1 --format=github .github/
+
   test:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest

@@ -18,6 +18,7 @@ One row per task. Times in local time (Europe/Warsaw).
 | M5c-tone-default | Core worker (claude in sbx) | sbx llmtr-m5c | 2026-10-04 | ~5 min | 0 (orchestrator review PASS) | merged | tone default gemma3 -> gemma3:12b (user decision)  |
 | M3-fix4 | Desktop worker (claude in sbx) | sbx llmtr-m3-fix4 | 2026-10-05 | ~10 min | 0 (orchestrator review PASS) | merged | stale ydotoold socket defeats clipboard fallback (user desktop test) ; host: running -> available True, stopped + stale socket -> False |
 | M6-logging | Integration worker (claude in sbx) | sbx llmtr-m6-logging | 2026-10-05 | 2026-10-06 | 1 (FIX: tone --next/--show unlogged, case-sensitive level, missing test) | merged | error + run log file, llmtr log --tail (user request) ; 299 tests; host: errors + run lines logged, no user text in log |
+| M7-security | Integration worker (claude in sbx) | sbx llmtr-m7-security | – | – | – | scheduled | contract 2026-10-22: pin actions by SHA + persist-credentials false (9 zizmor findings), reject non-http(s) Ollama URL (ruff S310); CI security job (pip-audit, zizmor non-blocking) added by orchestrator |
 
 ## Lessons
 
