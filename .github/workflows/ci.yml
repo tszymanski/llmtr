@@ -18,8 +18,10 @@ jobs:
     name: Lint (ruff, bash -n)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: "3.13"
           enable-cache: true
@@ -38,8 +40,10 @@ jobs:
     name: Security (pip-audit, zizmor)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: "3.13"
           enable-cache: true
@@ -49,8 +53,6 @@ jobs:
             -o "$RUNNER_TEMP/requirements.txt"
           uvx pip-audit@2.10.1 -r "$RUNNER_TEMP/requirements.txt" --require-hashes --disable-pip
       - name: zizmor (workflow security)
-        # Non-blocking until task M7-security fixes the 6 known findings; that task removes this line.
-        continue-on-error: true
         run: uvx zizmor@1.31.1 --format=github .github/
 
   test:
@@ -62,8 +64,10 @@ jobs:
         # 3.13 = host, 3.14 = Docker sandboxes
         python-version: ["3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true

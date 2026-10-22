@@ -337,7 +337,8 @@ def parse_config(
     named ``team`` replaces the built-in one in place.
 
     Raises ``ConfigError(source, ...)`` for a wrong type, an unsupported language code, a
-    language pair with ``native == other``, or a non-positive timeout/max_chars.
+    language pair with ``native == other``, a non-positive timeout/max_chars, or an Ollama URL
+    whose scheme is not ``http``/``https``.
     """
     env = env if env is not None else os.environ
     if not isinstance(data, Mapping):
@@ -345,11 +346,20 @@ def parse_config(
 
     ollama_table = _require_table(data, "ollama", source)
     url = _as_str(ollama_table, "url", DEFAULT_OLLAMA_URL, "ollama.url", source)
+    url_source = "[ollama] url"
     host_env = env.get(OLLAMA_HOST_ENV, "")
     if host_env:
         url = host_env
+        url_source = OLLAMA_HOST_ENV
+    url = normalize_ollama_url(url)
+    scheme = url.split("://", 1)[0]
+    if scheme.lower() not in ("http", "https"):
+        raise ConfigError(
+            source,
+            f"unsupported Ollama URL scheme '{scheme}' in {url_source} (use http or https)",
+        )
     ollama = OllamaConfig(
-        url=normalize_ollama_url(url),
+        url=url,
         timeout=_as_number(
             ollama_table, "timeout", OllamaConfig.timeout, "ollama.timeout", source, positive=True
         ),

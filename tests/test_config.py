@@ -100,6 +100,40 @@ def test_parse_config_empty_ollama_host_env_does_not_override() -> None:
     assert cfg.ollama.url == "http://example:11434"
 
 
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://example:21", "myapp://localhost"])
+def test_parse_config_rejects_non_http_scheme_in_config(url: str) -> None:
+    scheme = url.split("://", 1)[0]
+    with pytest.raises(ConfigError) as excinfo:
+        config.parse_config({"ollama": {"url": url}}, env={})
+    message = excinfo.value.user_message
+    assert f"'{scheme}'" in message
+    assert "[ollama] url" in message
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://example:21", "myapp://localhost"])
+def test_parse_config_rejects_non_http_scheme_in_ollama_host(url: str) -> None:
+    scheme = url.split("://", 1)[0]
+    with pytest.raises(ConfigError) as excinfo:
+        config.parse_config({}, env={"OLLAMA_HOST": url})
+    message = excinfo.value.user_message
+    assert f"'{scheme}'" in message
+    assert "OLLAMA_HOST" in message
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("http://example:11434", "http://example:11434"),
+        ("https://example:443", "https://example:443"),
+        ("HTTP://example:11434", "http://example:11434"),
+        ("localhost:11434", "http://localhost:11434"),
+    ],
+)
+def test_parse_config_accepts_http_schemes(url: str, expected: str) -> None:
+    assert config.parse_config({"ollama": {"url": url}}, env={}).ollama.url == expected
+    assert config.parse_config({}, env={"OLLAMA_HOST": url}).ollama.url == expected
+
+
 def test_parse_config_rejects_unsupported_language() -> None:
     with pytest.raises(ConfigError):
         config.parse_config({"languages": {"native": "de"}})

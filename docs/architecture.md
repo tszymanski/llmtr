@@ -295,7 +295,7 @@ All keys optional; a missing file means all defaults; unknown keys are ignored.
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `ollama.url` | string | `"http://localhost:11434"` | `OLLAMA_HOST` env (non-empty) overrides it; normalized: scheme and port 11434 added if missing, `0.0.0.0`/`[::]` → `127.0.0.1` |
+| `ollama.url` | string | `"http://localhost:11434"` | `OLLAMA_HOST` env (non-empty) overrides it; normalized: scheme and port 11434 added if missing, `0.0.0.0`/`[::]` → `127.0.0.1`; only `http`/`https` are accepted |
 | `ollama.timeout` | float, s | `120.0` | per request; > 0 |
 | `ollama.keep_alive` | string | `"30m"` | sent with every request |
 | `ollama.temperature` | float | `0.0` | |
@@ -419,7 +419,7 @@ out, otherwise → Polish". Polish typed without diacritics is still caught by s
 | Text too long | `plan_job` | `Selection too long (9000 characters, limit 8000).` | critical | restored |
 | Model output empty | `run_job` | `The model returned no text.` | critical | restored |
 | No clipboard tool | `make_clipboard` | `No working clipboard tool. Install wl-clipboard.` | critical | — |
-| Bad config | `load_config` | `Config error in …/config.toml: …` | critical | — |
+| Bad config | `load_config` | `Config error in …/config.toml: …` (incl. an Ollama URL that is not `http`/`https`) | critical | — |
 | Second press | `RunLock.acquire` false | (first process) `Cancelled.` | normal | restored |
 
 `detail` (exception text) goes to stderr only, which GNOME sends to the journal.
