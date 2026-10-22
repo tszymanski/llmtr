@@ -19,6 +19,7 @@ One row per task. Times in local time (Europe/Warsaw).
 | M3-fix4 | Desktop worker (claude in sbx) | sbx llmtr-m3-fix4 | 2026-10-05 | ~10 min | 0 (orchestrator review PASS) | merged | stale ydotoold socket defeats clipboard fallback (user desktop test) ; host: running -> available True, stopped + stale socket -> False |
 | M6-logging | Integration worker (claude in sbx) | sbx llmtr-m6-logging | 2026-10-05 | 2026-10-06 | 1 (FIX: tone --next/--show unlogged, case-sensitive level, missing test) | merged | error + run log file, llmtr log --tail (user request) ; 299 tests; host: errors + run lines logged, no user text in log |
 | M7-security | Integration worker (claude in sbx) | sbx llmtr-m7-security | 2026-10-22 15:20 | 15:22 | 0 (reviewer PASS, 3 minor) | merged | actions pinned by SHA + persist-credentials false (zizmor 9 -> 0, now blocking), non-http(s) Ollama URL -> ConfigError (ruff S310); CI security job (pip-audit, zizmor) added by orchestrator; 309 tests. SHAs checked with git ls-remote on host; zizmor online mode not run (needs a GitHub token) |
+| M8-spike | Mac spike worker (Claude Code on the user's Mac, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | – | – | – | scheduled | v2 macOS: hotkeys (Hammerspoon), osascript vs hs.eventtap keystrokes, permissions, pbcopy/pbpaste, model latency on 16 GB; pushes task branch to GitHub |
 
 ## Lessons
 
