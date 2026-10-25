@@ -131,6 +131,9 @@ class NotifyConfig:
     """
 
     enabled: bool = True
+    backend: str = "auto"
+    """v2 (macOS): ``"auto"`` (= ``"hammerspoon"``), ``"hammerspoon"`` or ``"osascript"``. Ignored
+    on Linux. Parsed from ``notify.backend`` by M10 (``parse_config`` ignores it until then)."""
 
 
 @dataclass(frozen=True)

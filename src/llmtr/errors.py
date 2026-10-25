@@ -103,6 +103,44 @@ class Cancelled(LlmtrError):
         super().__init__("Cancelled.")
 
 
+class MacKeySendError(KeySendError):
+    """v2 (macOS): ``osascript`` could not send a keystroke.
+
+    ``reason`` selects the message: ``"accessibility"`` (osascript error 1002), ``"automation"``
+    (error -1743, Hammerspoon may not control System Events), ``"timeout"`` (most likely an
+    unanswered permission dialog) or ``"failed"`` (anything else; ``detail`` has stderr).
+    """
+
+    MESSAGES = {
+        "accessibility": (
+            "Keystrokes blocked. Turn on Hammerspoon in System Settings > Privacy & Security > "
+            "Accessibility."
+        ),
+        "automation": (
+            "Keystrokes blocked. In System Settings > Privacy & Security > Automation, allow "
+            "Hammerspoon to control System Events."
+        ),
+        "timeout": "Keystrokes timed out. Answer the Hammerspoon permission prompt, then retry.",
+        "failed": "Could not send keystrokes. See: llmtr log",
+    }
+
+    def __init__(self, reason: str = "failed", detail: str = "") -> None:
+        super().__init__(detail)
+        self.reason = reason
+        self.user_message = self.MESSAGES.get(reason, self.MESSAGES["failed"])
+        self.args = (self.user_message,)
+
+
+class SecureInputActive(EmptySelection):
+    """v2 (macOS): nothing was copied and Secure Input is on; ``app`` is the process holding it."""
+
+    def __init__(self, app: str) -> None:
+        super().__init__(True)
+        self.app = app
+        self.user_message = f"Nothing copied: secure input is active in {app}."
+        self.args = (self.user_message,)
+
+
 __all__ = [
     "Cancelled",
     "ClipboardUnavailable",
@@ -110,9 +148,11 @@ __all__ = [
     "EmptySelection",
     "KeySendError",
     "LlmtrError",
+    "MacKeySendError",
     "ModelMissing",
     "OllamaError",
     "OllamaTimeout",
     "OllamaUnavailable",
+    "SecureInputActive",
     "TextTooLong",
 ]

@@ -73,6 +73,32 @@ interfaces, not new decisions. If evidence forces a deviation, argue it in the r
 
 `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`
 
+## Done when
+
+All of these hold; stop as soon as they do, and do not start M10/M11 work:
+
+1. `docs/architecture.md` covers every bullet under Deliverables 1, including the M10/M11 work
+   split with no file in both lists.
+2. Every new public name in the architecture has a typed stub in `src/llmtr/` and is checked in
+   `tests/test_interfaces.py`.
+3. Linux behaviour is unchanged: no existing test was edited except `tests/test_interfaces.py`, and
+   `git diff main -- src/` contains only additions (new stubs, new modules, new names), no changed
+   bodies of existing functions.
+4. The three "Must pass" commands exit 0 in a final run after the last edit.
+5. `docs/tasks/M9-architecture-macos.result.md` is written (sections below) and everything is
+   committed on `task/M9-architecture-macos`; `git status` is clean.
+
+If a condition cannot be met (e.g. a decision in the proposal turns out impossible), stop, write
+why in the result file under "Open points", commit what is done, and finish.
+
+## Reruns
+
+Record every rerun in the result file under **"Reruns"**, one line each: what was rerun (a "Must
+pass" command, a whole step, or the session itself after a restart/`--continue`), why (the failure
+or error text, shortened), and what changed before the rerun. A first run that passes needs no
+line. Write "Reruns: none" if there were none. The orchestrator copies the count and reasons to
+`docs/orchestration-log.md`.
+
 ## Out of scope
 
 Implementing the backends (M10), the installer, Lua file, README and CI (M11), Services,
@@ -81,6 +107,7 @@ Shortcuts.app, model changes.
 ## Hand-back
 
 Commit on `task/M9-architecture-macos` (prefix `M9-architecture-macos:`, end each message with
-`Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`). Do not push. Result file: summary of the
-design, deviations from the proposal (with reasons), open points for the user to decide before
-approval.
+`Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`). Do not push. Result file sections:
+**Summary** of the design, **Deviations** from the proposal (with reasons), **Reruns**, **Open
+points** for the user to decide before approval, and the final output of the three "Must pass"
+commands.

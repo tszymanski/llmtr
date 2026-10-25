@@ -20,7 +20,9 @@ One row per task. Times in local time (Europe/Warsaw).
 | M6-logging | Integration worker (claude in sbx) | sbx llmtr-m6-logging | 2026-10-05 | 2026-10-06 | 1 (FIX: tone --next/--show unlogged, case-sensitive level, missing test) | merged | error + run log file, llmtr log --tail (user request) ; 299 tests; host: errors + run lines logged, no user text in log |
 | M7-security | Integration worker (claude in sbx) | sbx llmtr-m7-security | 2026-10-22 15:20 | 15:22 | 0 (reviewer PASS, 3 minor) | merged | actions pinned by SHA + persist-credentials false (zizmor 9 -> 0, now blocking), non-http(s) Ollama URL -> ConfigError (ruff S310); CI security job (pip-audit, zizmor) added by orchestrator; 309 tests. SHAs checked with git ls-remote on host; zizmor online mode not run (needs a GitHub token) |
 | M8-spike | Mac spike worker (Claude Code on the user's Mac, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | 2026-10-23 | 2026-10-25 | 1 (FIX: user-specific paths in spike scripts) | squash-merged | all S1-S10 pass (S9 partial); suite passes on macOS; found LC_CTYPE bug in Hammerspoon children, release binding needed, only one model loaded at a time on 16 GB, 12b 7.7 tok/s |
-| M9-architecture-macos | Architect (claude in sbx) | sbx llmtr-m9-arch | – | – | – | scheduled | v2: platform layer, macOS backend interfaces, Hammerspoon Lua + installer split, M10/M11 work split; needs user approval |
+| M9-architecture-macos | Architect (claude in sbx, Sonnet 5.5) | sbx llmtr-m9-arch | 2026-10-25 22:50 | 23:02 | 0 (reviewer PASS, 4 minor) | merged | reruns: none; 7 stub modules, architecture §11-22, M10/M11 split; user approved 4 open points incl. permission failure = error (not clipboard-only) |
+| M10-macos-backends | Desktop worker (claude in sbx) | sbx llmtr-m10 | – | – | – | scheduled | v2: implement M9 stubs, cli via backends, fakes; parallel with M11 |
+| M11-macos-install | Integration worker (claude in sbx) | sbx llmtr-m11 | – | – | – | scheduled | v2: install.sh dispatch, install-macos.sh, llmtr.lua.in, README macOS, CI test-macos; parallel with M10 |
 
 ## Lessons
 
@@ -57,3 +59,5 @@ idempotent `install.sh`.
 - A worker's branch pushed to a **public** remote is public at once. Workers on a real machine
   must not write absolute home paths or session scratchpad paths into committed files; squash-merge
   when an early commit leaked one, then delete the remote branch.
+- Contracts need an explicit **"Done when"** list and a **rerun limit** (user request 2026-10-25):
+  workers in `claude -p` otherwise decide on their own when to stop and how often to retry.

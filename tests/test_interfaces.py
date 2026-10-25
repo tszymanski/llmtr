@@ -96,7 +96,66 @@ PUBLIC_NAMES: dict[str, list[str]] = {
         "FakeClock",
     ],
     "llmtr.cli": ["main", "build_parser", "run_shortcut"],
+    # v2 (macOS), architecture sections 11-22
+    "llmtr.platforms": [
+        "Platform",
+        "KeyDefaults",
+        "LINUX_KEY_DEFAULTS",
+        "MACOS_KEY_DEFAULTS",
+        "detect_platform",
+        "key_defaults",
+    ],
+    "llmtr.macos_exec": [
+        "PBCOPY",
+        "PBPASTE",
+        "OSASCRIPT",
+        "OPEN",
+        "IOREG",
+        "PS",
+        "LOCALE_VAR",
+        "LOCALE_VALUE",
+        "SUBPROCESS_TIMEOUT",
+        "Runner",
+        "child_env",
+    ],
+    "llmtr.macos_clipboard": ["PbClipboard"],
+    "llmtr.macos_keys": [
+        "MODIFIER_NAMES",
+        "KEY_CODES",
+        "ACCESSIBILITY_ERROR",
+        "AUTOMATION_ERROR",
+        "SEND_TIMEOUT",
+        "MacCombo",
+        "parse_mac_combo",
+        "build_applescript",
+        "classify_osascript_error",
+        "OsascriptKeySender",
+    ],
+    "llmtr.macos_notify": [
+        "URL_SCHEME",
+        "URL_HOST",
+        "RUN_ID_ENV",
+        "MAX_BODY_CHARS",
+        "build_notify_url",
+        "HammerspoonNotifier",
+        "OsascriptNotifier",
+    ],
+    "llmtr.macos_probes": [
+        "SECURE_INPUT_KEY",
+        "PROBE_TIMEOUT",
+        "focused_bundle_id",
+        "parse_secure_input_pid",
+        "secure_input_app",
+    ],
+    "llmtr.backends": [
+        "LINUX_PASTE_HINT",
+        "MACOS_PASTE_HINT",
+        "Desktop",
+        "make_notifier",
+        "make_desktop",
+    ],
 }
+PUBLIC_NAMES["llmtr.errors"] += ["MacKeySendError", "SecureInputActive"]
 
 
 @pytest.mark.parametrize("module_name", sorted(PUBLIC_NAMES))
@@ -170,3 +229,64 @@ def test_parser_modes() -> None:
     assert (args.mode, args.quality, args.stdin) == ("translate", True, True)
     assert parser.parse_args(["tone", "--next"]).next is True
     assert parser.parse_args(["fix"]).mode == "fix"
+
+
+def test_macos_backends_have_protocol_methods() -> None:
+    from llmtr import backends, macos_clipboard, macos_keys, macos_notify
+
+    for method in ("get_text", "set_text", "clear"):
+        assert callable(getattr(macos_clipboard.PbClipboard, method))
+    for method in ("available", "send"):
+        assert callable(getattr(macos_keys.OsascriptKeySender, method))
+    for cls in (macos_notify.HammerspoonNotifier, macos_notify.OsascriptNotifier):
+        assert callable(cls.notify)
+    assert {"platform", "make_clipboard", "keys", "focused_app_id", "paste_hint"} <= set(
+        backends.Desktop.__dataclass_fields__
+    )
+    assert "empty_selection_hint" in backends.Desktop.__dataclass_fields__
+
+
+def test_platform_key_defaults_constants() -> None:
+    from llmtr import platforms
+
+    keys_cfg = config.KeysConfig()
+    linux = platforms.LINUX_KEY_DEFAULTS
+    assert (linux.copy, linux.paste, linux.start_delay) == (
+        keys_cfg.copy,
+        keys_cfg.paste,
+        keys_cfg.start_delay,
+    )
+    mac = platforms.MACOS_KEY_DEFAULTS
+    assert (mac.copy, mac.paste, mac.start_delay) == ("cmd+c", "cmd+v", 0.0)
+
+
+def test_macos_constants() -> None:
+    from llmtr import macos_exec, macos_notify
+
+    for path in (
+        macos_exec.PBCOPY,
+        macos_exec.PBPASTE,
+        macos_exec.OSASCRIPT,
+        macos_exec.OPEN,
+        macos_exec.IOREG,
+        macos_exec.PS,
+    ):
+        assert path.startswith("/")
+    assert (macos_exec.LOCALE_VAR, macos_exec.LOCALE_VALUE) == ("LC_CTYPE", "UTF-8")
+    assert f"{macos_notify.URL_SCHEME}://{macos_notify.URL_HOST}" == "hammerspoon://llmtr"
+    assert config.NotifyConfig().backend == "auto"
+
+
+def test_macos_errors_carry_user_messages() -> None:
+    accessibility = errors.MacKeySendError("accessibility")
+    automation = errors.MacKeySendError("automation")
+    assert isinstance(accessibility, errors.KeySendError)
+    assert (
+        "Hammerspoon" in accessibility.user_message
+        and "Accessibility" in accessibility.user_message
+    )
+    assert "Hammerspoon" in automation.user_message and "Automation" in automation.user_message
+    assert str(automation) == automation.user_message
+    secure = errors.SecureInputActive("Google Chrome")
+    assert isinstance(secure, errors.EmptySelection)
+    assert "Google Chrome" in secure.user_message

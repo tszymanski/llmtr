@@ -57,9 +57,17 @@ This project tests a multi-agent build. Roles and milestones are in `docs/propos
   `task/<id>`. Each worker reads `CLAUDE.md`, `docs/proposal.md`, and its task file, then commits on
   its branch.
 - **Task contract** (`docs/tasks/<id>.md`): goal, files allowed to change, interface to match,
-  commands that must pass, out of scope, hand-back format.
+  commands that must pass, out of scope, hand-back format, a **"Done when"** list (the worker stops
+  as soon as it holds), and a **"Reruns"** rule.
+- **Reruns:** a worker may fix and rerun a failing "Must pass" command at most **3 times**, and
+  restart or `--continue` its session at most **once**. Every rerun gets one line in the result
+  file (what, why, what changed). At the limit the worker stops, records the failure, commits what
+  it has and finishes; the orchestrator decides. Rerunning after an intended code change is normal
+  work, not a rerun.
+- **Commit trailer:** workers end commits with a `Co-Authored-By` line naming the model they
+  actually run as (sandboxes default to Sonnet), not the orchestrator's model.
 - **Hand-back:** the worker ends with a short report in `docs/tasks/<id>.result.md`: what was done,
-  test output summary, deviations, new dependencies, open issues.
+  test output summary, deviations, reruns, new dependencies, open issues.
 - **Review loop:** at most two fix rounds per task, then back to the orchestrator. Nothing merges
   with red tests.
 - Log every task in `docs/orchestration-log.md` (start/end time, review rounds, notes).

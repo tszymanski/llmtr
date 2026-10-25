@@ -232,8 +232,10 @@ startup, from `sys.platform`; the exact module split is the Architect's call in 
    shown; only for `hs.notify`).
 
 The shortcuts themselves need no permission. The installer opens the right Settings panes and
-explains the steps; it cannot grant them. Without 1–2 `llmtr` falls back to clipboard-only ("Press
-⌘V"), as on Linux without `ydotool`.
+explains the steps; it cannot grant them. Without 1–2 the copy keystroke fails with a message that
+names the missing Hammerspoon setting (**not** a clipboard-only fallback, which would process stale
+clipboard text; M9 deviation, user approved 2026-10-25). Clipboard-only ("Press ⌘V") still applies
+when the paste fails or `osascript` is missing.
 
 ### Karabiner setup (for the README, from M8)
 
@@ -273,6 +275,7 @@ a visible "Translating…" notification and a working cancel matter more than on
 ### Milestones (v2)
 
 7. **M8 — macOS spike** — **done 2026-10-25** (all steps pass; models measured).
+   **M9 — Architecture** — **done 2026-10-25**, approved by the user (`docs/architecture.md` §11–22).
 8. **M9 — Architecture update.** Platform layer, macOS backend interfaces (clipboard, keys, notify
    incl. the Hammerspoon URL channel, focused app, Secure Input hint), Hammerspoon Lua interface,
    installer split; updated `docs/architecture.md`; user approves.

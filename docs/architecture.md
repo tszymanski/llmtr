@@ -1,6 +1,10 @@
-# llmtr architecture (M1)
+# llmtr architecture (M1, v2 macOS in sections 11-22)
 
-Status: proposed by the Architect on 2026-10-03, awaiting user approval. Scope and decisions come
+Sections 1-10 are the v1 (Linux) design and stay valid. Sections 11-22 are **v2** (macOS, task
+M9): they add a platform layer and macOS backends behind the same Protocols; Linux behaviour does
+not change.
+
+Status (v1): proposed by the Architect on 2026-10-03, awaiting user approval. Scope and decisions come
 from `docs/proposal.md`; this document fixes module boundaries, interfaces, the config schema and
 the work split. The typed stubs in `src/llmtr/` are the binding interface; when this document and
 a stub disagree, the stub's signature wins and the disagreement is a bug to report.
@@ -465,3 +469,395 @@ Both M2 and M3 must keep `tests/test_interfaces.py` green. Neither needs `uv add
 - `focused_app_id` depends on the Window Calls extension; without it only the default key pair is
   used (as the proposal says).
 - Fix/tone default model and prompt wording are confirmed in M5.
+
+---
+
+# v2 — macOS (M9, 2026-10-25)
+
+Source of the decisions: `docs/proposal.md` "macOS support (v2)" and the evidence in
+`docs/tasks/M8-spike.result.md`. This part turns them into interfaces; the typed stubs in
+`src/llmtr/` are binding (see the status paragraph at the top).
+
+## 11. Overview (v2)
+
+```
+Hammerspoon (llmtr.lua) ──hs.task, absolute path──▶ cli.py ──▶ backends.py (platform choice)
+        ▲                                                         ├─ platforms.py      detect, key defaults
+        └── hammerspoon://llmtr?… (open -g) ◀── macos_notify.py   ├─ macos_clipboard.py pbcopy/pbpaste
+                                                                  ├─ macos_keys.py      osascript keystrokes
+                                                                  ├─ macos_probes.py    focused app, Secure Input
+                                                                  └─ macos_exec.py      paths, env, Runner
+```
+
+Unchanged and shared: `engine`, `prompts`, `ollama_client`, `langdetect`, `selection`, `lock`,
+`log`, `fakes` (extended additively), `errors` (two new classes). Rules from section 1 hold:
+only `cli.py` imports both sides; `backends.py` and `macos_*.py` are desktop side and import no
+model-side module (they import `config.KeysConfig` and `errors`, as `keys.py` does).
+
+## 12. Platform selection
+
+`platforms.py` (pure):
+
+```python
+Platform = Literal["linux", "macos"]
+def detect_platform(sys_platform: str | None = None) -> Platform   # "darwin" -> "macos", else "linux"
+@dataclass(frozen=True) class KeyDefaults: copy; paste; start_delay
+LINUX_KEY_DEFAULTS = KeyDefaults("ctrl+c", "ctrl+v", 0.25)    # == KeysConfig defaults (test)
+MACOS_KEY_DEFAULTS = KeyDefaults("cmd+c", "cmd+v", 0.0)
+def key_defaults(platform: Platform) -> KeyDefaults
+```
+
+`backends.py` is the **one place** that maps a platform to backends. `cli.py` stops building
+`NotifySendNotifier` / `YdotoolKeySender` directly:
+
+```python
+@dataclass(frozen=True)
+class Desktop:
+    platform: Platform
+    make_clipboard: Callable[[], Clipboard]       # lazy: ClipboardUnavailable stays inside run_shortcut
+    keys: KeySender
+    focused_app_id: Callable[[], str | None]
+    paste_hint: str                                # LINUX_PASTE_HINT / MACOS_PASTE_HINT
+    empty_selection_hint: Callable[[], str | None] # macOS: Secure Input app name; Linux: lambda: None
+def make_notifier(platform=None, backend="auto", env=None) -> Notifier
+def make_desktop(platform=None, env=None, *, keys_config: KeysConfig | None = None) -> Desktop
+```
+
+| | Linux | macOS |
+| --- | --- | --- |
+| `make_notifier` | `NotifySendNotifier()` | `HammerspoonNotifier(env)` for `"auto"`/`"hammerspoon"`, `OsascriptNotifier()` for `"osascript"` |
+| `Desktop.make_clipboard` | `lambda: make_clipboard(env)` | `lambda: PbClipboard(env)` |
+| `Desktop.keys` | `YdotoolKeySender(env)` | `OsascriptKeySender()` |
+| `Desktop.focused_app_id` | `keys.focused_app_id` | `focused_bundle_id` if `keys_config.override` is non-empty, else `lambda: None` (saves ~0.25 s per run; the id is only needed for overrides) |
+| `Desktop.paste_hint` | `Result copied. Press Ctrl+V to paste.` | `Result copied. Press ⌘V to paste.` |
+| `Desktop.empty_selection_hint` | `lambda: None` | `secure_input_app` |
+
+`platform=None` means `detect_platform()`. Tests pass the platform (and `env`) explicitly, so the
+host OS never matters. `cli.main` (M10):
+
+```
+platform = detect_platform()
+notifier = make_notifier(platform)                     # before the config exists (config errors)
+config   = load_config(path, platform=platform)        # platform-dependent key defaults (13)
+notifier = make_notifier(platform, config.notify.backend)
+desktop  = make_desktop(platform, keys_config=config.keys)   # shortcut flow only
+```
+
+`run_shortcut` gets one more keyword-only parameter `desktop: Desktop | None = None` (default:
+`make_desktop(keys_config=config.keys)`); the existing `clipboard=`, `keys=` overrides stay and win
+over the bundle, so existing tests keep working. It uses `desktop.focused_app_id()`,
+`desktop.paste_hint` and `desktop.empty_selection_hint` (section 18).
+
+## 13. Platform-dependent defaults
+
+`KeysConfig` keeps its Linux defaults (`ctrl+c`, `ctrl+v`, `0.25`), so existing configs, tests and
+`Config()` do not change. Instead `parse_config` and `load_config` get a keyword-only
+`platform: Platform = "linux"`: a key **missing** from `[keys]` takes `key_defaults(platform)`;
+a key written by the user always wins (so `start_delay = 0.25` is respected on macOS). Only
+`cli.main` passes `detect_platform()`; everything else (all existing tests, `--stdin`) keeps
+"linux" defaults, which is also what keeps the suite green on the macOS CI runner.
+`[[keys.override]]` combos on macOS use the same combo syntax (`cmd+shift+c`).
+
+New key: `notify.backend` = `"auto"` (default) | `"hammerspoon"` | `"osascript"`, field
+`NotifyConfig.backend`. `"auto"` means Hammerspoon on macOS (Hammerspoon is required anyway: it
+starts `llmtr`); `"osascript"` is the user's switch if `hs.notify` is not allowed (Settings ->
+Notifications). Ignored on Linux. Any other value is a `ConfigError`. There is no auto-detection
+of the Notifications setting (macOS gives no API for it) — a user whose Hammerspoon bubbles do
+not show sets `backend = "osascript"`.
+
+## 14. macOS backends
+
+All take an injectable `run: Runner` (same call shape as `subprocess.run`, bytes mode); tests pass
+a fake, nothing real starts. Every tool is called by **absolute path** (constants in
+`macos_exec.py`) because `hs.task` children have `PATH=/usr/bin:/bin:/usr/sbin:/sbin`.
+
+### 14.1 `macos_exec.py`
+
+`PBCOPY`, `PBPASTE`, `OSASCRIPT`, `OPEN`, `IOREG`, `PS`, `SUBPROCESS_TIMEOUT`, `Runner`,
+`child_env(env=None) -> dict[str, str]`: copy of `env` (default `os.environ`) with
+`LC_CTYPE=UTF-8` **always** set (also when `env` has no locale; M8 bug) and `LC_ALL` removed
+(it would override `LC_CTYPE`).
+
+### 14.2 `macos_clipboard.py` — `PbClipboard(env=None, *, run=subprocess.run)`
+
+`Clipboard` implementation. `get_text`: `/usr/bin/pbpaste`, exit 0, empty output (empty or non-text
+clipboard) -> `""`. `set_text`: UTF-8 text on `/usr/bin/pbcopy`'s stdin (returns at once, leaves
+no process). `clear`: `set_text("")`. All calls use `child_env(env)`. Missing binary, non-zero
+exit, timeout -> `ClipboardUnavailable("pbcopy failed: …")` (user message "No working clipboard
+tool. Install wl-clipboard." is wrong on macOS; M10 adds an optional `tool` argument to the
+message, see 21).
+
+### 14.3 `macos_keys.py` — `OsascriptKeySender(*, run=subprocess.run)`
+
+`KeySender` implementation.
+
+- `parse_mac_combo("cmd+c") -> MacCombo("c", ("command down",))`; modifiers: `cmd|command|super`
+  -> `command down`, `ctrl|control` -> `control down`, `alt|opt|option` -> `option down`,
+  `shift` -> `shift down`. Key: one letter/digit (`keystroke`), or `enter`/`tab`/`space`
+  (`key code 36/48/49`). Anything else, or not exactly one key -> `ValueError`.
+- `build_applescript("cmd+c")` -> `tell application "System Events" to keystroke "c" using {command down}`;
+  named keys: `… to key code 36 using {…}`; no modifiers: no `using` clause. The script is built
+  from a validated combo only (no user text reaches it).
+- `send(combo)`: `ValueError` first (nothing runs); then `/usr/bin/osascript -e <script>` with
+  `child_env`, timeout `SEND_TIMEOUT` = 30 s (the first call blocks while the Automation dialog
+  is open: 43 s in M8).
+- `available()`: `/usr/bin/osascript` exists and is executable. Cheap, never raises. It does
+  **not** probe permissions: a probe would trigger the Automation dialog and cost ~0.2 s, and
+  Accessibility cannot be read without trying. A missing permission therefore shows up in `send`.
+- Error mapping (`classify_osascript_error(stderr)`), all raised as `MacKeySendError(reason,
+  detail=stderr)` (a `KeySendError`):
+
+| osascript result | reason | user message |
+| --- | --- | --- |
+| stderr has `(1002)` / "not allowed to send keystrokes" | `accessibility` | `Keystrokes blocked. Turn on Hammerspoon in System Settings > Privacy & Security > Accessibility.` |
+| stderr has `(-1743)` / "Not authorized to send Apple events" | `automation` | `Keystrokes blocked. In System Settings > Privacy & Security > Automation, allow Hammerspoon to control System Events.` |
+| `TimeoutExpired` (dialog unanswered) | `timeout` | `Keystrokes timed out. Answer the Hammerspoon permission prompt, then retry.` |
+| other non-zero exit, `OSError` | `failed` | `Could not send keystrokes. See: llmtr log` |
+
+("Accessibility" is titled "Device Control and Data Access" on macOS 27; the message uses the name
+that older versions and the Privacy list heading also use. The README shows both.)
+
+### 14.4 `macos_notify.py`
+
+Both classes are `Notifier`s and **never raise** (errors -> stderr, like `NotifySendNotifier`).
+
+- `HammerspoonNotifier(env=None, *, run_id=None, run=subprocess.run)`: each `notify` runs
+  `/usr/bin/open -g <url>` with `url = build_notify_url(run_id, summary, body, urgency)` =
+  `hammerspoon://llmtr?action=notify&id=<run_id>&summary=…&body=…&urgency=…` (values
+  percent-encoded, body cut to 500 characters). `-g` keeps the focus where it is (the paste goes
+  to the app the user is in). **One bubble per run:** the id is constant for the instance
+  (`$LLMTR_RUN_ID` set by `llmtr.lua`, else the PID) and Lua replaces/withdraws the previous
+  bubble of the same id, so "Translating…" is replaced by the result or error. Latency of the
+  channel is unmeasured (M8); `open` is given a 2 s timeout.
+- `OsascriptNotifier(*, run=...)`: `/usr/bin/osascript` with `on run argv … display notification
+  (item 2 of argv) with title (item 1 of argv) … end run`, summary and body passed as argv items
+  (no escaping, no injection). Shows as "Script Editor", cannot replace a bubble; urgency is
+  ignored.
+- **Choice:** only through config `notify.backend` (13). No runtime detection and no automatic
+  second attempt: a failed `open` is logged to stderr, the run continues.
+
+### 14.5 `macos_probes.py`
+
+- `focused_bundle_id(*, run=...) -> str | None`: `/usr/bin/osascript` asking System Events for the
+  frontmost process' bundle identifier (0.2-0.3 s). For logging and `[[keys.override]]` only
+  (M8: no override is needed on macOS). Returns `None` on any failure; never raises.
+- `parse_secure_input_pid(ioreg_output) -> int | None` (pure) and
+  `secure_input_app(*, run=...) -> str | None`: `/usr/sbin/ioreg -l -w 0`, find
+  `"kCGSSessionSecureInputPID"=<n>`, then `/bin/ps -p <n> -o comm=`, basename ("Google Chrome").
+  `None` if no PID or on failure; never raises. **Called only after "nothing copied"**
+  (section 18), never on the happy path (0.36 s).
+
+### 14.6 Errors (`errors.py`, two additive classes)
+
+`MacKeySendError(reason, detail="")` (subclass of `KeySendError`, messages above) and
+`SecureInputActive(app)` (subclass of `EmptySelection`, `used_keystrokes=True`): `Nothing copied:
+secure input is active in {app}.`
+
+## 15. Lock path on macOS
+
+`default_lock_path` already works unchanged. macOS sets no `$XDG_RUNTIME_DIR`, so the existing
+fallback applies: `$XDG_CACHE_HOME/llmtr/run.lock`, else `~/.cache/llmtr/run.lock` (`HOME` is set
+for `hs.task` children, M8). `fcntl.flock` and `os.kill(pid, SIGTERM)` behave the same on macOS,
+so cancel on the second press works. M10 only adds a test (a `tmp_path` HOME, no
+`XDG_RUNTIME_DIR` -> `…/.cache/llmtr/run.lock`) and does not edit `lock.py`.
+
+## 16. Hammerspoon side — `llmtr.lua`
+
+Lives in the repo as the template **`macos/llmtr.lua.in`**; the installer copies it to
+`~/.hammerspoon/llmtr.lua` with `@LLMTR_BIN@` replaced by the absolute path of the installed
+`llmtr` (`uv tool` puts it at `~/.local/bin/llmtr`; resolved at install time). No logic beyond
+launching `llmtr` and showing notifications.
+
+```lua
+local LLMTR = "@LLMTR_BIN@"                       -- absolute: hs.task children get a minimal PATH
+local bindings = {                                -- mods, key, args
+  { {"ctrl","alt"},          "t", {"translate"} },
+  { {"ctrl","alt"},          "g", {"fix"} },
+  { {"ctrl","alt"},          "r", {"tone"} },
+  { {"shift","ctrl","alt"},  "r", {"tone","--next"} },
+  { {"shift","ctrl","alt"},  "t", {"tone","--show"} },
+}
+-- for each: hs.hotkey.bind(mods, key, nil, function() run(args) end)   -- fires on key RELEASE
+```
+
+- **Release binding** (`pressedfn = nil`, `releasedfn = fn`; M8: a press binding fails while the
+  letter key is still down). A second press starts a second `llmtr`, which cancels the first.
+- **`run(args)`:** `hs.task.new(LLMTR, onExit, args)` with environment `LLMTR_RUN_ID=<counter>`
+  and `LC_CTYPE=UTF-8` (belt and braces; the Python backends do not rely on it), started
+  immediately. `onExit` schedules the withdrawal of this run's bubble (`hs.timer.doAfter`, 8 s;
+  15 s after exit code 1), so the last message disappears by itself while "Translating…" stays as
+  long as the job runs.
+- **Notification handler:** `hs.urlevent.bind("llmtr", fn)` receives `params` (`action`, `id`,
+  `summary`, `body`, `urgency`). `action=notify`: withdraw the bubble stored for `id`, create
+  `hs.notify.new({title=summary, informativeText=body, withdrawAfter=0})`, `:send()`, store it
+  under `id`. `action=withdraw`: withdraw `id`. Unknown actions are ignored.
+- `llmtr`'s stdout/stderr are not shown (the log file is the diagnosis path: `llmtr log`).
+- The installer adds one line `require("llmtr")` to `~/.hammerspoon/init.lua` (17). The user's own
+  Hammerspoon config is never rewritten.
+
+## 17. Installer split
+
+`install.sh` stays the single entry point and keeps all flags (`--dry-run`, `--uninstall`).
+Its first action (before the Linux code) is a dispatch: `case "${LLMTR_UNAME:-$(uname -s)}" in
+Darwin) exec "$SCRIPT_DIR/scripts/install-macos.sh" "$@" ;; Linux) ;; *) error ;; esac` — the Linux
+part below it is **unchanged**. (`LLMTR_UNAME` exists so tests can force the branch; the existing
+`install.sh` tests restrict `PATH`, so M11 must make sure `uname` stays reachable there.)
+
+`scripts/install-macos.sh` (macOS only, user-level, no `sudo`), safe to re-run:
+
+1. Preconditions: `uv` present (else print `brew install uv`), `Hammerspoon.app` present in
+   `/Applications` or `~/Applications` (else print `brew install --cask hammerspoon`).
+2. `uv tool install --reinstall .` (as on Linux); resolve the absolute path of `llmtr`.
+3. Write `~/.hammerspoon/llmtr.lua` from `macos/llmtr.lua.in` (replace `@LLMTR_BIN@`); create
+   `~/.hammerspoon/` if needed.
+4. Idempotently ensure `require("llmtr")` in `~/.hammerspoon/init.lua` (append if the line is
+   absent; create the file if there is none; keep everything else).
+5. Start Hammerspoon (`open -a Hammerspoon`). If it was already running, tell the user to use
+   *Reload Config* in its menu (the script cannot do it without the `hs` CLI).
+6. Open the three Settings panes from the proposal (`open "x-apple.systempreferences:…"`):
+   Privacy & Security -> Accessibility, -> Automation, and Notifications, and print the steps
+   (Accessibility: Hammerspoon on; Automation: Hammerspoon -> System Events on, the dialog appears
+   at the first ⌘C; Notifications: Allow, then restart Hammerspoon). It cannot grant anything.
+7. `--uninstall`: remove `~/.hammerspoon/llmtr.lua`, remove the `require("llmtr")` line from
+   `init.lua` (the file is kept even if empty), `uv tool uninstall llmtr`; keep config, state and
+   Hammerspoon itself.
+
+Karabiner (Caps Lock -> ⌃⌥) is **not** installed by the script; the README documents it.
+
+## 18. Call sequence — `llmtr translate` on macOS
+
+Differences to 3.1 are marked `*`.
+
+```
+ 0*. Hammerspoon: ⌃⌥T released -> hs.task(LLMTR, {"translate"}, env LLMTR_RUN_ID=n)
+ 1.  main: platform = detect_platform(); notifier = make_notifier(platform);
+     config = load_config(path, platform="macos")        # cmd+c / cmd+v / start_delay 0
+     notifier = make_notifier(platform, config.notify.backend)
+     desktop = make_desktop("macos", keys_config=config.keys)
+ 2.  lock = RunLock(default_lock_path())  -> ~/.cache/llmtr/run.lock *;  second press: cancel, exit 0
+ 3.  with lock: install_cancel_handler()
+ 4.  cb = desktop.make_clipboard()  # PbClipboard; pair = resolve_key_pair(config.keys, desktop.focused_app_id())
+ 5.  captured = capture_selection(cb, desktop.keys, pair, config.keys)
+        desktop.keys.available() true (osascript exists) -> saved = get_text(); clear();
+        sleep(0); send("cmd+c") ; poll until text or copy_timeout
+        a) text arrived -> continue
+        b) send raises MacKeySendError(accessibility|automation|timeout)  -> path P below
+        c) nothing arrived -> EmptySelection(True) -> path S below
+ 6.  plan_job; notifier.notify("Translating PL → EN…")   # hammerspoon://llmtr?action=notify&id=n…
+ 7.  run_job; save_last_result
+ 8.  deliver_result: set_text(result); send("cmd+v"); sleep(paste_delay); restore saved clipboard
+        send raises (permission revoked in between) -> result stays on the clipboard,
+        notifier.notify(desktop.paste_hint)    # "Result copied. Press ⌘V to paste."
+ 9.  return 0; Lua schedules the bubble withdrawal.
+
+ P (permission, step 5b): restore_clipboard; notifier.notify(exc.user_message, "critical") with
+    the Hammerspoon-specific text (14.3); detail (osascript stderr) to the log; exit 1.
+ S (nothing copied, step 5c): restore_clipboard(captured, cb)   # first, the probe takes ~0.4 s
+    app = desktop.empty_selection_hint()                          # secure_input_app(), only now
+    exc = SecureInputActive(app) if app else the EmptySelection
+    notify(exc.user_message, "critical"); exit 1.
+ Clipboard-only fallback: if `keys.available()` is false (no /usr/bin/osascript — never on a
+    stock Mac) the existing fallback of 3.1 runs with `desktop.paste_hint`.
+```
+
+Why a copy-time permission failure is an error and **not** a silent switch to clipboard-only
+(a deviation from the proposal's wording, see the result file): without Accessibility the selection
+cannot be captured, so the fallback would process whatever happens to be on the clipboard — a
+surprise. The user gets the exact fix instead. Clipboard-only still applies to a failed paste
+(step 8) and to the unavailable case.
+
+## 19. Error table (v2 additions to section 7)
+
+| Situation | Detected in | Notification (summary) | Urgency | Clipboard |
+| --- | --- | --- | --- | --- |
+| No Accessibility (osascript 1002) | `OsascriptKeySender.send` (copy) | `Keystrokes blocked. Turn on Hammerspoon in System Settings > Privacy & Security > Accessibility.` | critical | restored |
+| Automation denied (−1743) | `OsascriptKeySender.send` (copy) | `Keystrokes blocked. In System Settings > Privacy & Security > Automation, allow Hammerspoon to control System Events.` | critical | restored |
+| Automation dialog unanswered | `OsascriptKeySender.send` (timeout) | `Keystrokes timed out. Answer the Hammerspoon permission prompt, then retry.` | critical | restored |
+| osascript failed otherwise | `OsascriptKeySender.send` | `Could not send keystrokes. See: llmtr log` | critical | restored |
+| Nothing copied, Secure Input on | `empty_selection_hint` | `Nothing copied: secure input is active in Google Chrome.` | critical | restored |
+| Nothing copied, no Secure Input | `capture_selection` | `No text selected. Select some text first.` | critical | restored |
+| Paste fails | `deliver_result` | `Result copied. Press ⌘V to paste.` | normal | holds result |
+| pbcopy/pbpaste fail | `PbClipboard` | `No working clipboard tool.` (M10 wording, 21) | critical | — |
+| Bad `notify.backend` | `parse_config` | `Config error in …/config.toml: 'notify.backend' must be one of auto, hammerspoon, osascript` | critical | — |
+| Second press | `RunLock.acquire` false | `Cancelled.` | normal | restored |
+
+Ollama, model, timeout, length and config errors are the same as in section 7.
+
+## 20. Testing strategy (v2)
+
+- Nothing calls real `osascript`, `pbcopy`, `pbpaste`, `open`, `ioreg` or `ps`. Backends take
+  `run=` and tests pass a recording fake `Runner` (new `fakes.FakeRunner(responses)`: queued
+  `CompletedProcess` results or exceptions, records `argv`, `env`, `input`). The suite runs on
+  Linux and on the CI `macos-latest` job without a difference.
+- **Forcing the platform:** pure functions take it as an argument (`detect_platform("darwin")`,
+  `make_desktop("macos", env={…})`, `make_notifier("macos", "osascript")`,
+  `parse_config(data, platform="macos")`). No test patches `sys.platform`; the only test that reads
+  the real one asserts `detect_platform()` equals `detect_platform(sys.platform)`.
+- **Locale (required):** `PbClipboard` tests assert that the `env` given to the fake runner has
+  `LC_CTYPE == "UTF-8"` for `get_text`, `set_text` and `clear` when the constructor `env` is `{}`,
+  when it has `LC_ALL=pl_PL.ISO8859-2`, and that `LC_ALL` is gone; and that the caller's mapping is
+  not mutated. Plus `child_env` directly.
+- Absolute paths: every argv[0] in the fake runner is one of the constants in `macos_exec.py`.
+- Keys: table-driven `parse_mac_combo`/`build_applescript` (`cmd+c`, `cmd+shift+v`, `ctrl+alt+t`,
+  `enter`, errors); `classify_osascript_error` with the real M8 stderr strings; `send` with fakes
+  for 1002, −1743, timeout, `OSError`, success; `available()` with a patched `os.access`.
+- Notify: `build_notify_url` exact strings (Polish diacritics, `&`, `=`, newline, 500-char cut);
+  one `run_id` per instance; `LLMTR_RUN_ID` honoured; `open` failure and timeout never raise;
+  osascript fallback passes text as argv.
+- Probes: `parse_secure_input_pid` on a captured `ioreg` excerpt (fixture string in the test),
+  `secure_input_app` with fakes (found, none, `ps` fails), `focused_bundle_id` (ok, empty, fail).
+- Config: `key_defaults` per platform; `parse_config(…, platform="macos")` gives `cmd+c`/`cmd+v`/
+  `0.0`; user values win; default call unchanged; `notify.backend` valid/invalid.
+- CLI: `run_shortcut` with a hand-built `Desktop` of fakes: Secure Input message after an empty
+  capture (and no `secure_input_app` call on success), `paste_hint` used, `MacKeySendError`
+  notified with its message.
+- Installer/Lua (M11): `tests/test_install_macos.py` runs `scripts/install-macos.sh` with fake
+  `uv`, `open`, `uname` in a temp `PATH` and a temp `HOME` (idempotent `require`, created/existing
+  `init.lua`, `--dry-run`, `--uninstall`); the Lua template is checked as text (five bindings,
+  `@LLMTR_BIN@` placeholder, release binding form).
+- Real checks (M12) happen on the test Mac.
+
+## 21. Work split (v2)
+
+No file is in both lists. Neither worker edits a file of the other, `docs/architecture.md`, or
+`docs/proposal.md`. Both keep `tests/test_interfaces.py` green. Neither needs `uv add`.
+
+**M10 — macOS desktop backends** (sandbox, Linux):
+
+- Implement (replace `NotImplementedError`): `src/llmtr/platforms.py`, `macos_exec.py`,
+  `macos_clipboard.py`, `macos_keys.py`, `macos_notify.py`, `macos_probes.py`, `backends.py`.
+- Edit: `src/llmtr/config.py` (`parse_config`/`load_config` `platform=` argument, `notify.backend`
+  parsing and validation; dataclass defaults unchanged), `src/llmtr/cli.py` (use `backends`,
+  `Desktop`, `desktop=` parameter, paste hint, Secure Input message), `src/llmtr/errors.py`
+  (only: `ClipboardUnavailable` and `EmptySelection(False)` messages get an optional parameter so
+  the macOS wording drops "wl-clipboard"/"ydotool"; defaults unchanged), `src/llmtr/fakes.py`
+  (additive: `FakeRunner`), `config.example.toml` (`notify.backend`, macOS defaults).
+- Tests: `tests/test_platforms.py`, `test_macos_exec.py`, `test_macos_clipboard.py`,
+  `test_macos_keys.py`, `test_macos_notify.py`, `test_macos_probes.py`, `test_backends.py`; additive
+  cases in `tests/test_config.py`, `tests/test_cli.py`, `tests/test_lock.py` (macOS fallback path),
+  `tests/test_interfaces.py`.
+- Must not change: `lock.py`, `selection.py`, `keys.py`, `clipboard.py`, `notify.py` (v1
+  behaviour), prompts, `install.sh`, anything under `macos/`, `scripts/`, `.github/`.
+
+**M11 — macOS install + docs** (sandbox, Linux; real run on the Mac later):
+
+- `install.sh` (dispatch only), `scripts/install-macos.sh` (new), `macos/llmtr.lua.in` (new),
+  `README.md` (macOS section: requirements, install, the three permissions with the exact names
+  and the dialog text from M8, notifications and `notify.backend`, Caps Lock via Karabiner with the
+  rule and setup steps from the proposal, troubleshooting: `llmtr log`, Secure Input, locale),
+  `.github/workflows/ci.yml` (a `test-macos` job on `macos-latest`: `uv sync --locked`, pytest,
+  ruff; Python 3.13 and 3.14 as in the proposal), `tests/test_install_macos.py` (new) and, only if
+  the dispatch needs it, `tests/test_install.py`.
+- Must not change: anything in `src/llmtr/`, other tests, `config.example.toml`.
+
+The two lists meet only at two documented contracts: the URL protocol and `LLMTR_RUN_ID` (14.4 and
+16) and the `llmtr` absolute path substituted for `@LLMTR_BIN@`.
+
+## 22. Open points (v2)
+
+- Whether the `hammerspoon://` channel is fast enough (unmeasured in M8); M12 checks it. If not,
+  `notify.backend = "osascript"` is the escape hatch.
+- Accessibility cannot be probed cheaply, so a missing grant is reported on the first copy, not
+  at install time (section 18).
+- `hs.task` environment handling (merge vs replace) is checked in M11 on the Mac; the Python side
+  does not depend on it.
