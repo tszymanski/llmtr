@@ -19,7 +19,8 @@ One row per task. Times in local time (Europe/Warsaw).
 | M3-fix4 | Desktop worker (claude in sbx) | sbx llmtr-m3-fix4 | 2026-10-05 | ~10 min | 0 (orchestrator review PASS) | merged | stale ydotoold socket defeats clipboard fallback (user desktop test) ; host: running -> available True, stopped + stale socket -> False |
 | M6-logging | Integration worker (claude in sbx) | sbx llmtr-m6-logging | 2026-10-05 | 2026-10-06 | 1 (FIX: tone --next/--show unlogged, case-sensitive level, missing test) | merged | error + run log file, llmtr log --tail (user request) ; 299 tests; host: errors + run lines logged, no user text in log |
 | M7-security | Integration worker (claude in sbx) | sbx llmtr-m7-security | 2026-10-22 15:20 | 15:22 | 0 (reviewer PASS, 3 minor) | merged | actions pinned by SHA + persist-credentials false (zizmor 9 -> 0, now blocking), non-http(s) Ollama URL -> ConfigError (ruff S310); CI security job (pip-audit, zizmor) added by orchestrator; 309 tests. SHAs checked with git ls-remote on host; zizmor online mode not run (needs a GitHub token) |
-| M8-spike | Mac spike worker (Claude Code on the user's Mac, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | – | – | – | scheduled | v2 macOS: hotkeys (Hammerspoon), osascript vs hs.eventtap keystrokes, permissions, pbcopy/pbpaste, model latency on 16 GB; pushes task branch to GitHub |
+| M8-spike | Mac spike worker (Claude Code on the user's Mac, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | 2026-10-23 | 2026-10-25 | 1 (FIX: user-specific paths in spike scripts) | squash-merged | all S1-S10 pass (S9 partial); suite passes on macOS; found LC_CTYPE bug in Hammerspoon children, release binding needed, only one model loaded at a time on 16 GB, 12b 7.7 tok/s |
+| M9-architecture-macos | Architect (claude in sbx) | sbx llmtr-m9-arch | – | – | – | scheduled | v2: platform layer, macOS backend interfaces, Hammerspoon Lua + installer split, M10/M11 work split; needs user approval |
 
 ## Lessons
 
@@ -53,3 +54,6 @@ cycling and `--show`; cancel on second press; clipboard-only fallback with ydoto
 idempotent `install.sh`.
 - `sbx` sandboxes return 403 for github.com, so tools that query GitHub (zizmor online audits,
   `git ls-remote` for action SHAs) must run on the host. Put such values in the contract.
+- A worker's branch pushed to a **public** remote is public at once. Workers on a real machine
+  must not write absolute home paths or session scratchpad paths into committed files; squash-merge
+  when an early commit leaked one, then delete the remote branch.

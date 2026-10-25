@@ -177,99 +177,121 @@ on a private clone of the repo.
 
 ## macOS support (v2)
 
-Decisions by the user, 2026-10-22. Status: **approved 2026-10-22**; M8 spike next.
+Decisions by the user, 2026-10-22 and (after the M8 spike) 2026-10-25. Status: **approved**; M8 spike
+done (`docs/tasks/M8-spike.result.md`), M9 architecture next.
 
 ### Goal
 
 The same five shortcuts and the same flow as on Linux (copy → model → paste, cancel on second press,
 tone presets, clipboard-only fallback, log), on Apple silicon Macs. Only the desktop layer and the
 installer change; `prompts.py`, `ollama_client.py`, `engine.py`, `langdetect.py`, `config.py`,
-`lock.py` and `log.py` are shared.
+`lock.py` and `log.py` are shared. M8: the existing suite already passes on macOS (309 tests).
 
-Test Mac: MacBook Pro M1, 16 GB, macOS 27.0.1. Target apps: Electron apps (Slack, Teams, VS Code),
-browsers, native apps, Terminal/iTerm — all of them, which rules out macOS Services as the main path.
+Test Mac: MacBook Pro M1, 16 GB, macOS 27.0.1. Target apps: Electron apps (Teams, VS Code; Slack is
+not installed), browsers, native apps, Terminal/iTerm — all of them, which rules out macOS Services
+as the main path.
 
 ### Decisions
 
 | Topic | Decision |
 | --- | --- |
 | Approach | **Option A**: same flow as Linux, global shortcuts from a hotkey tool. Rejected: Shortcuts.app (hotkeys can't be installed by a script, minimal PATH); macOS Services (no Electron apps, no cancel) — possible later extra for native apps, as it only needs `--stdin`. |
-| Hotkey tool | **Hammerspoon** (free, MIT, `brew install --cask hammerspoon`). `install.sh` writes `~/.hammerspoon/llmtr.lua` and adds one `require("llmtr")` line to `init.lua` (idempotent, keeps the user's own config). |
-| Default shortcuts | **⌃⌥** (Ctrl+Opt): ⌃⌥T translate, ⌃⌥G fix, ⌃⌥R tone, ⇧⌃⌥R tone --next, ⇧⌃⌥T tone --show. Same letters as Linux. |
-| Caps Lock | User's own Mac only: Karabiner-Elements maps Caps Lock (held) → ⌃⌥, so Caps+T/G/R use the defaults with no llmtr config change. **Not** part of `install.sh`; README gets an optional section with the Karabiner rule and its setup (driver extension allowed in Login Items & Extensions, Input Monitoring for `karabiner_grabber`/`karabiner_observer`, Devices → Modify events: without these the rule silently does nothing). |
-| Copy/paste keys | `cmd+c` / `cmd+v` (also work in Terminal and iTerm, so `[[keys.override]]` is not needed on macOS). |
+| Hotkey tool | **Hammerspoon** (free, MIT, `brew install --cask hammerspoon`). `install.sh` writes `~/.hammerspoon/llmtr.lua` and adds one `require("llmtr")` line to `init.lua` (idempotent, keeps the user's own config; creates `init.lua` if there is none). |
+| Default shortcuts | **⌃⌥** (Ctrl+Opt): ⌃⌥T translate, ⌃⌥G fix, ⌃⌥R tone, ⇧⌃⌥R tone --next, ⇧⌃⌥T tone --show. Same letters as Linux. M8: no conflicts in Teams, Chrome, VS Code, Notes, Terminal. |
+| Binding trigger | **On key release, no start delay** (M8: the press binding fails while the letter key is still down; a still-held ⌃⌥ or Caps is harmless). |
+| Keystrokes | **`osascript` → System Events, called from `llmtr`** (M8 S5), so the whole flow stays in shared Python. Documented fallback: `hs.eventtap.keyStroke` from Lua (S6, same speed, Accessibility only). |
+| Notifications | **`hs.notify`** (shows as Hammerspoon, "Translating…" can be withdrawn/replaced) through a `hammerspoon://llmtr?…` URL event; **fallback `osascript display notification`** (shows as "Script Editor", cannot be replaced). User decision 2026-10-25. |
+| Caps Lock | User's own Mac only: Karabiner-Elements maps Caps Lock (held) → ⌃⌥, tap alone = Caps Lock. **Not** part of `install.sh`; README gets an optional section with the rule and the setup from M8 (below). |
+| Copy/paste keys | `cmd+c` / `cmd+v` (also work in Terminal and iTerm, so `[[keys.override]]` is not needed on macOS; M8 S8). |
+| Models | Shipped defaults unchanged; the user keeps `gemma3:12b` for tone on the Mac and accepts the M1 speed (2026-10-25). |
+| Python | No `.python-version` pin: code targets 3.13, CI tests 3.13 and 3.14, uv may pick either (2026-10-25). |
 
 ### Desktop layer on macOS
 
 | Job | Linux (v1) | macOS (v2) |
 | --- | --- | --- |
-| Global shortcut | GNOME `gsettings` | Hammerspoon `hs.hotkey.bind` → `hs.task` runs `llmtr` by absolute path |
-| Clipboard | `wl-copy` / `wl-paste` | `pbcopy` / `pbpaste` (built in) |
-| Copy/paste keystrokes | `ydotool` | `osascript` → System Events `keystroke "c" using command down` (built in; needs Accessibility) |
-| Notifications | `notify-send` | `osascript -e 'display notification …'` (built in; cannot replace or close "Translating…") |
-| Modifier release | key-up for Super/Alt + `start_delay` | fire the Hammerspoon binding on key **release**, so ⌃⌥ is up before ⌘C is sent |
+| Global shortcut | GNOME `gsettings` | Hammerspoon `hs.hotkey.bind(mods, key, nil, fn)` (release) → `hs.task` runs `llmtr` **by absolute path** (`hs.task` children get `PATH=/usr/bin:/bin:/usr/sbin:/sbin`) |
+| Clipboard | `wl-copy` / `wl-paste` | `/usr/bin/pbcopy` / `/usr/bin/pbpaste`, **always with `LC_CTYPE=UTF-8`** in their env (Hammerspoon children have no locale; Polish text is garbled otherwise). Empty clipboard or an image → empty output |
+| Copy/paste keystrokes | `ydotool` | `/usr/bin/osascript` → System Events `keystroke "c" using command down` |
+| Notifications | `notify-send` | `hs.notify` via URL event; fallback `osascript display notification` |
+| Modifier release | key-up for Super/Alt + `start_delay` | release binding, no delay |
+| Secure Input | — | detected as "nothing copied" (existing check); then `ioreg -l -w 0` (`kCGSSessionSecureInputPID`) names the app in the message |
 | Config/state/cache | XDG paths | same XDG paths (`~/.config/llmtr/…`), not `~/Library` |
 
-The platform is chosen once, at startup, from `sys.platform`; the exact module split (one module per
-platform or a backend per existing module) is the Architect's call in M8.
+Measured in M8 without a model: hotkey → paste 0.43–0.50 s. The platform is chosen once, at
+startup, from `sys.platform`; the exact module split is the Architect's call in M9.
 
-### Permissions
+### Permissions (macOS 27.0.1, all for Hammerspoon only)
 
-macOS requires the user to grant **Accessibility** to Hammerspoon once, by hand, in System Settings →
-Privacy & Security. `osascript` runs as Hammerspoon's child, so the permission should carry over —
-the spike must confirm this. The installer opens the right Settings pane and explains the step; it
-cannot grant it. Without the permission `llmtr` falls back to clipboard-only ("Press ⌘V"), as on
-Linux without `ydotool`.
+1. Privacy & Security → **Accessibility** (titled "Device Control and Data Access" on macOS 27):
+   Hammerspoon on. Without it `osascript` fails with "osascript is not allowed to send keystrokes
+   (1002)"; no `osascript` entry is needed.
+2. Privacy & Security → **Automation** → Hammerspoon → System Events on. A dialog asks on the first
+   ⌘C ("“Hammerspoon” wants access to control “System Events”"); the installer can trigger it.
+3. **Notifications** → Hammerspoon → Allow notifications, then restart Hammerspoon (no prompt is
+   shown; only for `hs.notify`).
 
-### Models on a 16 GB M1
+The shortcuts themselves need no permission. The installer opens the right Settings panes and
+explains the steps; it cannot grant them. Without 1–2 `llmtr` falls back to clipboard-only ("Press
+⌘V"), as on Linux without `ydotool`.
 
-Unified memory; by default the GPU gets about 2/3 of it (~10–11 GB).
+### Karabiner setup (for the README, from M8)
 
-| Model | Size (Q4) | On the test Mac |
+On the test Mac the rule was enabled but silently did nothing until:
+1. Driver extension allowed (Login Items & Extensions → Driver Extensions).
+2. Input Monitoring: add **`Karabiner-Core-Service`** by hand (+ → ⌘⇧G →
+   `/Library/Application Support/org.pqrs/Karabiner-Elements/Karabiner-Core-Service.app`), then
+   restart Karabiner-Elements (Karabiner 16; older versions used `karabiner_grabber`/`_observer`).
+3. Devices → Apple Internal Keyboard → Modify events on.
+4. ISO keyboards: Devices → "Swap ISO layout-specific keys" on, or `` ` ``/`~` produce `§`.
+5. Check in Karabiner-EventViewer: Caps held + T shows `left_control`, `left_option`, then `t`.
+
+### Models on a 16 GB M1 (measured in M8)
+
+Unified memory; the GPU gets about 2/3 (~10.7 GB). Generation is memory-bandwidth bound (~68 GB/s).
+
+| Model | Size | On the test Mac |
 | --- | --- | --- |
-| `translategemma:12b` | ~8 GB | fits |
-| `gemma3:12b` (tone default) | ~8 GB | fits, but not together with translategemma 12b → reload on every switch |
-| `gemma3` 4b (fix default) | ~3.3 GB | fits next to translategemma 12b |
+| `translategemma:12b` | ~8 GB | 7.7 tokens/s; sentence 3.5 s loaded, paragraph 12–21 s, long text (220 words) 51–55 s, cold +14 s |
+| `gemma3:12b` (tone) | ~8 GB | 7.8 tokens/s; tone paragraph 9–15 s loaded; really rewrites |
+| `gemma3` 4b (fix) | ~3.4 GB | 22.7 tokens/s; 4–7 s; barely changes the tone (so not used for tone) |
 | `translategemma:27b` (`--quality`) | ~17 GB | does not fit; `--quality` is not usable on this Mac |
 
-The spike measures real latency; if 12b is too slow or the tone↔translate reload hurts, the user's
-config (not the shipped defaults) switches tone to `gemma3` 4b.
+**Only one model stays loaded**, even translategemma 12b + gemma3 4b: every switch between
+translate and tone/fix reloads (+6–8 s for translate, +4 s for 4b, +9 s for 12b). With 10–50 s jobs,
+a visible "Translating…" notification and a working cancel matter more than on Linux.
 
 ### Testing
 
 - Sandboxes run Linux: macOS backends are built there and unit-tested with fakes (no real
-  `osascript`/`pbcopy`), as the Linux desktop layer was.
+  `osascript`/`pbcopy`), as the Linux desktop layer was. One test must check that the clipboard
+  backend sets `LC_CTYPE=UTF-8` even when `os.environ` has no locale.
 - CI adds a `macos-latest` test job, so the unit tests also run on macOS.
-- Real desktop checks run on the test Mac (user acceptance), with a checklist per milestone.
+- Real desktop checks run on the test Mac (user acceptance), by an interactive Claude Code session
+  there; it pushes its `task/<id>` branch to GitHub and the orchestrator reviews and squash-merges.
 
 ### Milestones (v2)
 
-7. **M8 — macOS spike** (on the test Mac, by an interactive Claude Code session there with the
-   user; no sandbox, since it must test the real desktop; it pushes `task/M8-spike` to GitHub and
-   the orchestrator reviews it). A short script and checklist: Hammerspoon hotkey →
-   shell command, `osascript` keystroke with Accessibility granted to Hammerspoon only,
-   `pbcopy`/`pbpaste` round trip, notification, release-triggered binding, Ollama latency for
-   12b/4b and the tone↔translate reload. Check: results file with pass/fail per item and timings.
-8. **M9 — Architecture update.** Platform layer, macOS backend interfaces, installer split,
-   updated `docs/architecture.md`; user approves.
-9. **M10 — macOS desktop backends.** Clipboard, keys, notify, focused app on macOS, with fake-based
-   tests. Check: unit tests pass on Linux and on the CI macOS runner.
-10. **M11 — macOS install + docs.** `install.sh` on macOS (uv tool, Hammerspoon config, Settings
-    pane, `--uninstall`), README macOS section incl. the optional Karabiner rule, CI macOS job.
-    Check: fresh install on the test Mac gives five working shortcuts.
-11. **M12 — Mac acceptance.** User checklist in Slack, a browser, Notes and Terminal; cancel;
-    clipboard-only fallback without Accessibility; model defaults confirmed for 16 GB.
+7. **M8 — macOS spike** — **done 2026-10-25** (all steps pass; models measured).
+8. **M9 — Architecture update.** Platform layer, macOS backend interfaces (clipboard, keys, notify
+   incl. the Hammerspoon URL channel, focused app, Secure Input hint), Hammerspoon Lua interface,
+   installer split; updated `docs/architecture.md`; user approves.
+9. **M10 — macOS desktop backends.** The M9 interfaces on macOS, with fake-based tests. Check: unit
+   tests pass on Linux and on the CI macOS runner.
+10. **M11 — macOS install + docs.** `install.sh` on macOS (uv tool, Hammerspoon Lua + `require`,
+    Settings panes, `--uninstall`), README macOS section incl. permissions and the optional
+    Karabiner rule, CI macOS job. Check: fresh install on the test Mac gives five working shortcuts.
+11. **M12 — Mac acceptance.** User checklist in Teams, a browser, VS Code, Notes and Terminal; cancel
+    on a long translate; clipboard-only fallback without Accessibility; Secure Input message.
 
 ### Risks (macOS)
 
-- **Accessibility/TCC:** if the permission does not carry over from Hammerspoon to `osascript`,
-  keystrokes fail. Mitigation: spike first; fallback is Hammerspoon sending the keys itself
-  (`hs.eventtap.keyStroke`) or clipboard-only.
-- **Secure Input:** password fields and Terminal's "Secure Keyboard Entry" block synthetic
-  keystrokes. Mitigation: clipboard-only fallback with a clear notification.
+- **Speed on M1:** 12–21 s per translated paragraph (bandwidth bound); accepted by the user.
+  Mitigation: notification, cancel, `keep_alive`.
+- **Permissions:** three manual steps; a missed one must give a clear message, not a silent failure.
+- **Locale/PATH in Hammerspoon children:** absolute tool paths and `LC_CTYPE=UTF-8` (M8 bug).
 - **Existing Hammerspoon config:** the installer only adds one `require` line and its own file.
-- **Memory and speed on 16 GB M1:** see the model table; measured in M8.
-- **macOS 27 changes:** new release; the spike runs on 27.0.1 before any build.
+- **macOS updates:** M8 ran on 27.0.1; Settings names already differ from older macOS.
 
 ## Risks
 
