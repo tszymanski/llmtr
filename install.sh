@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Install (or uninstall) llmtr: the CLI via `uv tool install`, and five GNOME custom shortcuts.
+# On macOS this script hands over to scripts/install-macos.sh (Hammerspoon shortcuts instead).
 #
 # Run as your normal user (not root); this script never calls sudo itself. For ydotool (needed
 # for the keystroke-based copy/paste flow; without it llmtr falls back to clipboard-only mode),
@@ -15,6 +16,17 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Platform dispatch. LLMTR_UNAME forces the branch in tests.
+case "${LLMTR_UNAME:-$(uname -s)}" in
+    Darwin) exec "$SCRIPT_DIR/scripts/install-macos.sh" "$@" ;;
+    Linux) ;;
+    *)
+        echo "install.sh: unsupported system: ${LLMTR_UNAME:-$(uname -s)} (Linux and macOS only)" >&2
+        exit 1
+        ;;
+esac
+
 MEDIA_KEYS_SCHEMA="org.gnome.settings-daemon.plugins.media-keys"
 BASE_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"
 

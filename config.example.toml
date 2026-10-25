@@ -21,6 +21,8 @@ tone = "gemma3:12b"                        # llmtr tone; better formal Polish (M
 native = "pl"   # text detected as this language is translated to "other"
 other = "en"    # everything else is translated to "native"; must differ from native
 
+# macOS: when [keys] has no copy / paste / start_delay, llmtr uses "cmd+c", "cmd+v" and 0 (the
+# shortcuts fire on key release, so no delay is needed). Values you set here always win.
 [keys]
 copy = "ctrl+c"         # key llmtr sends to copy the selection (never a trigger)
 paste = "ctrl+v"        # key llmtr sends to paste the result
@@ -48,6 +50,8 @@ instruction = "Informal team message: casual and friendly, short sentences, firs
 
 [notify]
 enabled = true   # false hides progress notifications ("Translating..."); errors/hints still show
+backend = "auto" # macOS only: "auto" (= "hammerspoon") | "hammerspoon" | "osascript"; use
+                 # "osascript" if Hammerspoon notifications are not allowed. Ignored on Linux
 
 [log]
 enabled = true   # false disables the run/error log entirely; no log file is created

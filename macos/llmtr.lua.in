@@ -1,0 +1,73 @@
+-- llmtr for Hammerspoon. Installed by install.sh as ~/.hammerspoon/llmtr.lua (the placeholder
+-- below is replaced by the absolute path of the installed llmtr) and loaded by one
+-- require("llmtr") line in ~/.hammerspoon/init.lua. This file only starts llmtr and shows its
+-- notifications; everything else happens in llmtr itself.
+
+local LLMTR = "@LLMTR_BIN@"  -- absolute: hs.task children get PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+local WITHDRAW_AFTER = 8        -- seconds the last bubble of a run stays after llmtr exits
+local WITHDRAW_AFTER_ERROR = 15 -- same, after exit code 1 (an error the user has to read)
+
+local bindings = {
+  { { "ctrl", "alt" },          "t", { "translate" } },
+  { { "ctrl", "alt" },          "g", { "fix" } },
+  { { "ctrl", "alt" },          "r", { "tone" } },
+  { { "shift", "ctrl", "alt" }, "r", { "tone", "--next" } },
+  { { "shift", "ctrl", "alt" }, "t", { "tone", "--show" } },
+}
+
+local bubbles = {}  -- run id (string) -> hs.notify of that run
+local counter = 0
+local tasks = {}    -- keeps running hs.task objects from being garbage collected
+local timers = {}   -- same for pending withdraw timers (a collected timer never fires)
+
+local function withdraw(id)
+  local bubble = bubbles[id]
+  if bubble then
+    bubble:withdraw()
+    bubbles[id] = nil
+  end
+end
+
+local function run(args)
+  counter = counter + 1
+  local id = tostring(counter)
+  local task
+  task = hs.task.new(LLMTR, function(code)
+    tasks[id] = nil
+    local delay = (code == 1) and WITHDRAW_AFTER_ERROR or WITHDRAW_AFTER
+    timers[id] = hs.timer.doAfter(delay, function()
+      timers[id] = nil
+      withdraw(id)
+    end)
+  end, args)
+  local env = task:environment()
+  env["LLMTR_RUN_ID"] = id
+  env["LC_CTYPE"] = "UTF-8"
+  task:setEnvironment(env)
+  tasks[id] = task
+  task:start()
+end
+
+-- Bind on key RELEASE (pressedfn = nil): a press binding fails while the letter key is still down.
+-- A second press starts a second llmtr, which cancels the first.
+for _, b in ipairs(bindings) do
+  hs.hotkey.bind(b[1], b[2], nil, function() run(b[3]) end)
+end
+
+-- hammerspoon://llmtr?action=notify&id=…&summary=…&body=…&urgency=…  (sent by llmtr via `open -g`)
+hs.urlevent.bind("llmtr", function(_, params)
+  local id = params.id or ""
+  if params.action == "notify" then
+    withdraw(id)
+    local bubble = hs.notify.new({
+      title = params.summary or "llmtr",
+      informativeText = params.body or "",
+      withdrawAfter = 0,
+    })
+    bubble:send()
+    bubbles[id] = bubble
+  elseif params.action == "withdraw" then
+    withdraw(id)
+  end
+end)

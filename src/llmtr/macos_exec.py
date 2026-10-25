@@ -7,6 +7,7 @@ tool is called by absolute path and the child environment is built here.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Callable, Mapping
 
@@ -34,7 +35,10 @@ def child_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
     Always sets ``LC_CTYPE=UTF-8``, even when ``env`` has no locale, and removes ``LC_ALL`` (it
     would override ``LC_CTYPE``). Never mutates ``env``.
     """
-    raise NotImplementedError
+    result = dict(env if env is not None else os.environ)
+    result.pop("LC_ALL", None)
+    result[LOCALE_VAR] = LOCALE_VALUE
+    return result
 
 
 __all__ = [

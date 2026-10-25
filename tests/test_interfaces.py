@@ -94,6 +94,7 @@ PUBLIC_NAMES: dict[str, list[str]] = {
         "FakeKeySender",
         "FakeNotifier",
         "FakeClock",
+        "FakeRunner",
     ],
     "llmtr.cli": ["main", "build_parser", "run_shortcut"],
     # v2 (macOS), architecture sections 11-22
@@ -290,3 +291,44 @@ def test_macos_errors_carry_user_messages() -> None:
     secure = errors.SecureInputActive("Google Chrome")
     assert isinstance(secure, errors.EmptySelection)
     assert "Google Chrome" in secure.user_message
+
+
+def test_fake_runner_records_calls_and_replays_responses() -> None:
+    run = fakes.FakeRunner([fakes.FakeRunner.ok(b"out"), FileNotFoundError("x")])
+    result = run(["/usr/bin/pbpaste"], input=b"in", env={"A": "1"}, timeout=2.0, check=False)
+    assert result.stdout == b"out" and result.returncode == 0
+    with pytest.raises(FileNotFoundError):
+        run(["/usr/bin/pbcopy"])
+    first = run.calls[0]
+    assert (first.argv, first.input, first.env, first.timeout) == (
+        ["/usr/bin/pbpaste"],
+        b"in",
+        {"A": "1"},
+        2.0,
+    )
+    assert first.kwargs == {"check": False}
+    with pytest.raises(AssertionError):
+        run(["/usr/bin/open"])
+
+
+def test_fake_runner_ok_failure_result() -> None:
+    result = fakes.FakeRunner.ok(stderr=b"bad", returncode=3)
+    assert (result.returncode, result.stderr, result.stdout) == (3, b"bad", b"")
+
+
+def test_error_message_parameters_default_to_linux_wording() -> None:
+    assert errors.ClipboardUnavailable().user_message == (
+        "No working clipboard tool. Install wl-clipboard."
+    )
+    assert errors.ClipboardUnavailable("d", "No working clipboard tool.").user_message == (
+        "No working clipboard tool."
+    )
+    assert errors.EmptySelection(False).user_message == (
+        "Clipboard is empty. Copy the text first (ydotool is not set up)."
+    )
+    assert errors.EmptySelection(False, "Clipboard is empty.").user_message == (
+        "Clipboard is empty."
+    )
+    assert errors.EmptySelection(True, "ignored").user_message == (
+        "No text selected. Select some text first."
+    )

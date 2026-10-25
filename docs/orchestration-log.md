@@ -21,8 +21,8 @@ One row per task. Times in local time (Europe/Warsaw).
 | M7-security | Integration worker (claude in sbx) | sbx llmtr-m7-security | 2026-10-22 15:20 | 15:22 | 0 (reviewer PASS, 3 minor) | merged | actions pinned by SHA + persist-credentials false (zizmor 9 -> 0, now blocking), non-http(s) Ollama URL -> ConfigError (ruff S310); CI security job (pip-audit, zizmor) added by orchestrator; 309 tests. SHAs checked with git ls-remote on host; zizmor online mode not run (needs a GitHub token) |
 | M8-spike | Mac spike worker (Claude Code on the user's Mac, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | 2026-10-23 | 2026-10-25 | 1 (FIX: user-specific paths in spike scripts) | squash-merged | all S1-S10 pass (S9 partial); suite passes on macOS; found LC_CTYPE bug in Hammerspoon children, release binding needed, only one model loaded at a time on 16 GB, 12b 7.7 tok/s |
 | M9-architecture-macos | Architect (claude in sbx, Sonnet 5.5) | sbx llmtr-m9-arch | 2026-10-25 22:50 | 23:02 | 0 (reviewer PASS, 4 minor) | merged | reruns: none; 7 stub modules, architecture §11-22, M10/M11 split; user approved 4 open points incl. permission failure = error (not clipboard-only) |
-| M10-macos-backends | Desktop worker (claude in sbx) | sbx llmtr-m10 | – | – | – | scheduled | v2: implement M9 stubs, cli via backends, fakes; parallel with M11 |
-| M11-macos-install | Integration worker (claude in sbx) | sbx llmtr-m11 | – | – | – | scheduled | v2: install.sh dispatch, install-macos.sh, llmtr.lua.in, README macOS, CI test-macos; parallel with M10 |
+| M10-macos-backends | Desktop worker (claude in sbx, Sonnet 5.5) | sbx llmtr-m10 | 2026-10-25 23:28 | ~23:33 | 0 (reviewer PASS, 2 minor) | merged | reruns: 5 (over limit 3; lint line length/import order + 1 pytest after removing imports v1 tests patch; worker did not stop, reported it); deviation: Linux wiring stays in cli.py (v1 tests patch cli names), backends Linux branch unused; first review failed (sandbox OAuth expired), rerun in fresh sandbox llmtr-m10-rev; 444 tests |
+| M11-macos-install | Integration worker (claude in sbx, Sonnet 5.5) | sbx llmtr-m11 | 2026-10-25 23:28 | 2026-10-26 ~10:20 | 1 (FIX: bash 3.2 keeps quotes in ${x//p/"r"} -> broken llmtr.lua; withdraw timers GC'd; uninstall dropped trailing blank lines) | merged | reruns: none; 20+3 installer tests incl. BASH_COMPAT=31/42; zizmor 0 on host; Settings URLs and real bash 3.2 to verify on the Mac (M12) |
 
 ## Lessons
 
@@ -61,3 +61,9 @@ idempotent `install.sh`.
   when an early commit leaked one, then delete the remote branch.
 - Contracts need an explicit **"Done when"** list and a **rerun limit** (user request 2026-10-25):
   workers in `claude -p` otherwise decide on their own when to stop and how often to retry.
+- `claude` in a long-lived sandbox can lose its login ("OAuth session expired and could not be
+  refreshed"). A fresh sandbox (`sbx create --clone`) works and sees the host's fetched branches.
+- Shell code for macOS must be tested under its bash 3.2: run installer tests also with
+  `BASH_COMPAT=31` (pattern substitution with quotes differs between bash versions).
+- Reviewers may skim tests ("did not read the new test files line by line"); the orchestrator
+  spot-checks that each test the contract demands exists.

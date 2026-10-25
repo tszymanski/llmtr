@@ -64,9 +64,15 @@ class OllamaError(LlmtrError):
 class EmptySelection(LlmtrError):
     """No text was captured (nothing selected, or empty clipboard in fallback mode)."""
 
-    def __init__(self, used_keystrokes: bool = True) -> None:
+    def __init__(
+        self, used_keystrokes: bool = True, empty_clipboard_message: str | None = None
+    ) -> None:
+        """``empty_clipboard_message`` replaces the clipboard-only wording (used on macOS, where
+        ydotool is not involved)."""
         if used_keystrokes:
             message = "No text selected. Select some text first."
+        elif empty_clipboard_message is not None:
+            message = empty_clipboard_message
         else:
             message = "Clipboard is empty. Copy the text first (ydotool is not set up)."
         super().__init__(message)
@@ -85,8 +91,12 @@ class TextTooLong(LlmtrError):
 class ClipboardUnavailable(LlmtrError):
     """Neither wl-clipboard nor xclip is usable, or a clipboard command failed."""
 
-    def __init__(self, detail: str = "") -> None:
-        super().__init__("No working clipboard tool. Install wl-clipboard.", detail)
+    def __init__(self, detail: str = "", message: str | None = None) -> None:
+        """``message`` replaces the Linux wording (used on macOS, which has no wl-clipboard)."""
+        super().__init__(
+            message if message is not None else "No working clipboard tool. Install wl-clipboard.",
+            detail,
+        )
 
 
 class KeySendError(LlmtrError):

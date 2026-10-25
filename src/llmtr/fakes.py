@@ -6,6 +6,7 @@ freely; changing them needs the orchestrator (they are shared by M2, M3 and M4).
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -147,6 +148,60 @@ class FakeNotifier:
 
 
 @dataclass
+class RunnerCall:
+    """One call of ``FakeRunner``: ``argv`` plus the keyword arguments of ``subprocess.run``."""
+
+    argv: list[str]
+    env: Mapping[str, str] | None
+    input: bytes | None
+    timeout: float | None
+    kwargs: dict[str, Any]
+
+
+class FakeRunner:
+    """``macos_exec.Runner`` (same call shape as ``subprocess.run``) returning queued results.
+
+    Each call pops the next item of ``responses``: a ``CompletedProcess`` is returned, an
+    exception is raised. Every call is recorded in ``calls``. Nothing real is started::
+
+        run = FakeRunner([FakeRunner.ok(b"text")])
+        PbClipboard({}, run=run).get_text()
+        assert run.calls[0].argv == ["/usr/bin/pbpaste"]
+    """
+
+    def __init__(
+        self, responses: Sequence[subprocess.CompletedProcess[bytes] | BaseException] = ()
+    ) -> None:
+        self.responses: list[subprocess.CompletedProcess[bytes] | BaseException] = list(responses)
+        self.calls: list[RunnerCall] = []
+
+    def __call__(self, argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        call_kwargs = dict(kwargs)
+        self.calls.append(
+            RunnerCall(
+                argv=list(argv),
+                env=call_kwargs.pop("env", None),
+                input=call_kwargs.pop("input", None),
+                timeout=call_kwargs.pop("timeout", None),
+                kwargs=call_kwargs,
+            )
+        )
+        if not self.responses:
+            raise AssertionError("FakeRunner: no response queued")
+        item = self.responses.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+    @staticmethod
+    def ok(
+        stdout: bytes = b"", stderr: bytes = b"", returncode: int = 0
+    ) -> subprocess.CompletedProcess[bytes]:
+        """A finished process; ``returncode`` non-zero for a failure."""
+        return subprocess.CompletedProcess([], returncode, stdout=stdout, stderr=stderr)
+
+
+@dataclass
 class FakeClock:
     """Injectable ``sleep``/``monotonic`` pair: ``sleep`` advances ``now`` instantly."""
 
@@ -168,6 +223,8 @@ __all__ = [
     "FakeClock",
     "FakeKeySender",
     "FakeNotifier",
+    "FakeRunner",
     "FakeTransport",
     "Notification",
+    "RunnerCall",
 ]

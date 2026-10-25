@@ -6,10 +6,12 @@ The permissions are granted to Hammerspoon (it is the process tree's responsible
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 
-from llmtr.macos_exec import Runner
+from llmtr.errors import MacKeySendError
+from llmtr.macos_exec import OSASCRIPT, Runner, child_env
 
 MODIFIER_NAMES: dict[str, str] = {
     "cmd": "command down",
@@ -50,21 +52,47 @@ def parse_mac_combo(combo: str) -> MacCombo:
     """``"cmd+c"`` -> ``MacCombo("c", ("command down",))``. Case-insensitive, ``+``-separated,
     modifiers first, exactly one key last. Raises ``ValueError`` for unknown names or a combo
     without exactly one non-modifier."""
-    raise NotImplementedError
+    parts = [part.strip().lower() for part in combo.split("+")]
+    if not parts or any(not part for part in parts):
+        raise ValueError(f"Malformed combo {combo!r}")
+    *mods, key = parts
+    modifiers: list[str] = []
+    for mod in mods:
+        if mod not in MODIFIER_NAMES:
+            raise ValueError(f"Unknown modifier {mod!r} in combo {combo!r}")
+        modifiers.append(MODIFIER_NAMES[mod])
+    if key in MODIFIER_NAMES:
+        raise ValueError(f"Combo {combo!r} has no key besides modifiers")
+    if key not in KEY_CODES and not (len(key) == 1 and key.isascii() and key.isalnum()):
+        raise ValueError(f"Unknown key {key!r} in combo {combo!r}")
+    return MacCombo(key=key, modifiers=tuple(modifiers))
 
 
 def build_applescript(combo: str) -> str:
     """``"cmd+c"`` -> ``tell application "System Events" to keystroke "c" using {command down}``
     (no ``using`` clause without modifiers; ``key code N`` for named keys). Raises ``ValueError``
     like ``parse_mac_combo``."""
-    raise NotImplementedError
+    parsed = parse_mac_combo(combo)
+    if parsed.key in KEY_CODES:
+        action = f"key code {KEY_CODES[parsed.key]}"
+    else:
+        action = f'keystroke "{parsed.key}"'
+    script = f'tell application "System Events" to {action}'
+    if parsed.modifiers:
+        script += f" using {{{', '.join(parsed.modifiers)}}}"
+    return script
 
 
 def classify_osascript_error(stderr: str) -> str:
     """``"accessibility"`` if ``stderr`` has ``(1002)`` / "not allowed to send keystrokes",
     ``"automation"`` if it has ``(-1743)`` / "Not authorized to send Apple events", else
     ``"failed"``. Pure."""
-    raise NotImplementedError
+    lowered = stderr.lower()
+    if f"({ACCESSIBILITY_ERROR})" in stderr or "not allowed to send keystrokes" in lowered:
+        return "accessibility"
+    if f"({AUTOMATION_ERROR})" in stderr or "not authorized to send apple events" in lowered:
+        return "automation"
+    return "failed"
 
 
 class OsascriptKeySender:
@@ -80,13 +108,31 @@ class OsascriptKeySender:
     """
 
     def __init__(self, *, run: Runner = subprocess.run) -> None:
-        raise NotImplementedError
+        self._run = run
 
     def available(self) -> bool:
-        raise NotImplementedError
+        try:
+            return os.access(OSASCRIPT, os.X_OK)
+        except Exception:  # pragma: no cover - defensive, must never raise
+            return False
 
     def send(self, combo: str) -> None:
-        raise NotImplementedError
+        script = build_applescript(combo)
+        try:
+            result = self._run(
+                [OSASCRIPT, "-e", script],
+                capture_output=True,
+                env=child_env(),
+                timeout=SEND_TIMEOUT,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise MacKeySendError("timeout", str(exc)) from exc
+        except OSError as exc:
+            raise MacKeySendError("failed", str(exc)) from exc
+        if result.returncode != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace").strip()
+            raise MacKeySendError(classify_osascript_error(stderr), stderr)
 
 
 __all__ = [

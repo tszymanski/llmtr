@@ -337,3 +337,70 @@ def test_save_last_result_overwrites(tmp_path: Path) -> None:
     config.save_last_result("first", tmp_path)
     path = config.save_last_result("second", tmp_path)
     assert path.read_text(encoding="utf-8") == "second"
+
+
+# --- v2: platform-dependent key defaults and notify.backend --------------------------------------
+
+
+def test_parse_config_default_platform_is_linux() -> None:
+    cfg = config.parse_config({})
+    assert (cfg.keys.copy, cfg.keys.paste, cfg.keys.start_delay) == ("ctrl+c", "ctrl+v", 0.25)
+    assert cfg == config.parse_config({}, platform="linux")
+
+
+def test_parse_config_macos_without_keys_table_uses_mac_defaults() -> None:
+    cfg = config.parse_config({}, platform="macos")
+    assert (cfg.keys.copy, cfg.keys.paste, cfg.keys.start_delay) == ("cmd+c", "cmd+v", 0.0)
+    assert cfg.keys.copy_timeout == config.KeysConfig().copy_timeout
+    assert cfg.keys.paste_delay == config.KeysConfig().paste_delay
+
+
+def test_parse_config_macos_explicit_keys_win() -> None:
+    data = {"keys": {"copy": "ctrl+c", "paste": "ctrl+shift+v", "start_delay": 0.25}}
+    cfg = config.parse_config(data, platform="macos")
+    assert (cfg.keys.copy, cfg.keys.paste, cfg.keys.start_delay) == (
+        "ctrl+c",
+        "ctrl+shift+v",
+        0.25,
+    )
+
+
+def test_parse_config_macos_defaults_only_for_missing_keys() -> None:
+    cfg = config.parse_config({"keys": {"paste": "cmd+shift+v"}}, platform="macos")
+    assert (cfg.keys.copy, cfg.keys.paste, cfg.keys.start_delay) == ("cmd+c", "cmd+shift+v", 0.0)
+
+
+def test_load_config_passes_platform(tmp_path) -> None:
+    missing = tmp_path / "none.toml"
+    assert config.load_config(missing, env={}, platform="macos").keys.copy == "cmd+c"
+    assert config.load_config(missing, env={}).keys.copy == "ctrl+c"
+    existing = tmp_path / "config.toml"
+    existing.write_text("[ollama]\ntimeout = 30\n", encoding="utf-8")
+    mac = config.load_config(existing, env={}, platform="macos")
+    assert (mac.keys.copy, mac.keys.paste, mac.keys.start_delay) == ("cmd+c", "cmd+v", 0.0)
+    assert mac.ollama.timeout == 30
+    existing.write_text('[keys]\ncopy = "ctrl+c"\n', encoding="utf-8")
+    assert config.load_config(existing, env={}, platform="macos").keys.copy == "ctrl+c"
+
+
+def test_notify_backend_default_is_auto() -> None:
+    assert config.parse_config({}).notify.backend == "auto"
+
+
+@pytest.mark.parametrize("backend", ["auto", "hammerspoon", "osascript"])
+def test_notify_backend_valid_values(backend) -> None:
+    assert config.parse_config({"notify": {"backend": backend}}).notify.backend == backend
+
+
+def test_notify_backend_invalid_value_is_config_error() -> None:
+    with pytest.raises(ConfigError) as info:
+        config.parse_config({"notify": {"backend": "growl"}}, source="/x/config.toml")
+    assert str(info.value) == (
+        "Config error in /x/config.toml: 'notify.backend' must be one of auto, hammerspoon, "
+        "osascript"
+    )
+
+
+def test_notify_backend_wrong_type_is_config_error() -> None:
+    with pytest.raises(ConfigError):
+        config.parse_config({"notify": {"backend": 3}})

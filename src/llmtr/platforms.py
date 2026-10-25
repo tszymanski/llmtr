@@ -5,6 +5,7 @@ The platform is chosen once, at startup, from ``sys.platform``. Everything here 
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import Literal
 
@@ -32,12 +33,13 @@ def detect_platform(sys_platform: str | None = None) -> Platform:
 
     ``sys_platform`` defaults to ``sys.platform``; tests pass it explicitly.
     """
-    raise NotImplementedError
+    value = sys_platform if sys_platform is not None else sys.platform
+    return "macos" if value == "darwin" else "linux"
 
 
 def key_defaults(platform: Platform) -> KeyDefaults:
     """``LINUX_KEY_DEFAULTS`` or ``MACOS_KEY_DEFAULTS``."""
-    raise NotImplementedError
+    return MACOS_KEY_DEFAULTS if platform == "macos" else LINUX_KEY_DEFAULTS
 
 
 __all__ = [

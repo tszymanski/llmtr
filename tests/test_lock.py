@@ -117,3 +117,12 @@ def test_install_cancel_handler_raises_cancelled_on_sigterm():
             os.kill(os.getpid(), signal.SIGTERM)
     finally:
         signal.signal(signal.SIGTERM, old_handler)
+
+
+def test_default_lock_path_on_macos_without_runtime_dir(tmp_path, monkeypatch):
+    """macOS sets no XDG_RUNTIME_DIR: the cache fallback under HOME is used (architecture 15)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    assert lock.default_lock_path({}) == tmp_path / ".cache" / "llmtr" / "run.lock"
+    assert lock.default_lock_path() == tmp_path / ".cache" / "llmtr" / "run.lock"

@@ -1,6 +1,6 @@
 # llmtr
 
-A small command-line tool for GNOME on Wayland: select some text anywhere, press a shortcut, and
+A small command-line tool for GNOME on Wayland and macOS: select some text anywhere, press a shortcut, and
 `llmtr` translates it (PL↔EN), fixes its grammar, or rewrites its tone — using a local Ollama
 model — then pastes the result back over the selection.
 
@@ -19,7 +19,12 @@ result is left on the clipboard instead of being pasted automatically, with a no
 reminding you to press Ctrl+V. Only plain text is handled — images and files on the clipboard are
 left untouched.
 
+On macOS the shortcuts are `Ctrl+Opt+T/G/R` (and `Shift+Ctrl+Opt+R/T`) instead of the `Super+Alt`
+ones, run through Hammerspoon; see [macOS](#macos).
+
 ## Requirements
+
+(Linux; for macOS see [macOS](#macos).)
 
 - Linux with GNOME on Wayland (uses `gsettings` custom shortcuts).
 - [uv](https://docs.astral.sh/uv/) — used to install and run the CLI.
@@ -60,6 +65,128 @@ Other `install.sh` flags:
 ./install.sh --dry-run      # print every command instead of running it
 ./install.sh --uninstall    # remove llmtr's shortcuts and the uv tool; keeps config and ydotool
 ```
+
+## macOS
+
+Same commands and flow as on Linux, on Apple silicon Macs (tested on macOS 27 with an M1, 16 GB).
+Global shortcuts come from [Hammerspoon](https://www.hammerspoon.org); `llmtr` copies and pastes
+with `osascript` (System Events), `pbcopy` and `pbpaste`.
+
+| Shortcut | Command |
+| --- | --- |
+| `Ctrl+Opt+T` | `llmtr translate` |
+| `Ctrl+Opt+G` | `llmtr fix` |
+| `Ctrl+Opt+R` | `llmtr tone` |
+| `Shift+Ctrl+Opt+R` | `llmtr tone --next` |
+| `Shift+Ctrl+Opt+T` | `llmtr tone --show` |
+
+The shortcuts fire when you **release** the letter key. A second press while a job runs cancels it.
+Copy and paste use `⌘C`/`⌘V` (also in Terminal and iTerm).
+
+### macOS requirements
+
+- [uv](https://docs.astral.sh/uv/): `brew install uv`.
+- Hammerspoon: `brew install --cask hammerspoon`, in `/Applications` or `~/Applications`.
+- A running Ollama server with your models, as above. With 16 GB only one 12b model stays loaded:
+  every switch between translate and tone/fix reloads the model (+6–9 s), and a translated
+  paragraph takes 12–21 s. `translategemma:27b` (`--quality`) does not fit.
+
+### macOS install
+
+```bash
+./install.sh                # same entry point; on macOS it runs scripts/install-macos.sh
+./install.sh --dry-run      # print every command instead of running it
+./install.sh --uninstall    # remove llmtr's Hammerspoon file and line and the uv tool
+```
+
+The installer is user-level (no `sudo`) and safe to re-run. It installs the CLI with
+`uv tool install`, writes `~/.hammerspoon/llmtr.lua` (with the absolute path of `llmtr`), adds one
+`require("llmtr")` line to `~/.hammerspoon/init.lua` (created if missing; the rest of your
+Hammerspoon config is never touched), starts Hammerspoon and opens the System Settings panes you
+need. If Hammerspoon was already running, choose *Reload Config* in its menu bar menu. `--uninstall`
+keeps your llmtr config and state and Hammerspoon itself.
+
+### macOS permissions
+
+macOS lets nobody grant these by script, so you do it once. All three are for **Hammerspoon**:
+
+1. **Privacy & Security → Accessibility** (titled **Device Control and Data Access** on macOS 27):
+   turn Hammerspoon on. Without it `osascript` fails with "osascript is not allowed to send
+   keystrokes (1002)" and `llmtr` tells you to turn Hammerspoon on here. No `osascript` entry is
+   needed.
+2. **Privacy & Security → Automation → Hammerspoon → System Events**: on. At the first copy macOS
+   asks *"“Hammerspoon” wants access to control “System Events”. Allowing control will provide access
+   to documents and data in “System Events”, and to perform actions within that app."* — click
+   **Allow**. The first press waits while the dialog is open.
+3. **Notifications → Hammerspoon**: *Allow notifications*, then **restart Hammerspoon** (no prompt is
+   shown; only needed for the notification bubbles).
+
+The shortcuts themselves need no permission. A missing Accessibility or Automation grant is reported
+on the first press with a notification naming the setting; llmtr does not fall back to the
+clipboard there, because it would process stale clipboard text.
+
+### macOS notifications
+
+By default `llmtr` shows its messages through Hammerspoon, as one bubble per run: "Translating…" is
+replaced by the result or the error and disappears a few seconds after the run. If no Hammerspoon
+bubbles appear (Notifications not allowed, or you prefer not to), set in
+`~/.config/llmtr/config.toml`:
+
+```toml
+[notify]
+backend = "osascript"   # "auto" (default, = hammerspoon on macOS) | "hammerspoon" | "osascript"
+```
+
+`osascript` bubbles show as "Script Editor" and cannot be replaced. The key is ignored on Linux.
+
+### Caps Lock as Ctrl+Opt (optional, Karabiner-Elements)
+
+Not part of the installer. With [Karabiner-Elements](https://karabiner-elements.pqrs.org) you can
+hold Caps Lock instead of `Ctrl+Opt` (a tap alone is still Caps Lock). Add this under
+*Complex Modifications → Add your own rule*:
+
+```json
+{
+  "description": "Caps Lock held → Ctrl+Option (tap = Caps Lock)",
+  "manipulators": [
+    {
+      "from": { "key_code": "caps_lock", "modifiers": { "optional": ["any"] } },
+      "to": [{ "key_code": "left_control", "modifiers": ["left_option"] }],
+      "to_if_alone": [{ "key_code": "caps_lock" }],
+      "type": "basic"
+    }
+  ]
+}
+```
+
+If the rule is enabled but Caps Lock keeps toggling (Karabiner gives no warning):
+
+1. Allow the driver extension (System Settings → General → Login Items & Extensions → Driver
+   Extensions).
+2. Privacy & Security → Input Monitoring: add **`Karabiner-Core-Service`** by hand (**+** → `⌘⇧G` →
+   `/Library/Application Support/org.pqrs/Karabiner-Elements/Karabiner-Core-Service.app`), switch it
+   on, then restart Karabiner-Elements. (Karabiner 16; older versions used `karabiner_grabber` and
+   `karabiner_observer`.)
+3. Karabiner Settings → Devices → your keyboard (e.g. Apple Internal Keyboard): *Modify events* on.
+4. ISO keyboards: Devices → *Swap ISO layout-specific keys* on, or `` ` ``/`~` produce `§`.
+5. Check in Karabiner-EventViewer: Caps held + `T` must show `left_control` and `left_option`, then `t`.
+
+### macOS troubleshooting
+
+- **Start with `llmtr log`.** The log at `~/.local/state/llmtr/llmtr.log` is the diagnosis path:
+  Hammerspoon does not show `llmtr`'s output.
+- **"Nothing copied: secure input is active in …"** — the app (often a browser with a focused
+  password field, or a password manager) turned on Secure Input, which blocks the copy keystroke.
+  Leave the field or close the app that holds it.
+- **"No text selected"** — nothing was selected, or the app ignored `⌘C`.
+- **Polish letters come out garbled** — report it with `llmtr log`; `llmtr` runs `pbcopy` and
+  `pbpaste` with `LC_CTYPE=UTF-8` because Hammerspoon's children have no locale.
+- **Shortcut does nothing** — check that Hammerspoon is running and reload its config; open
+  *Console* in its menu and look for errors from `llmtr.lua`. Another app may own the same shortcut.
+- **No bubbles** — see macOS notifications above (Allow notifications, restart Hammerspoon, or use
+  `backend = "osascript"`).
+- **Removing everything** — `./install.sh --uninstall`; then delete `~/.config/llmtr`,
+  `~/.local/state/llmtr`, `~/.cache/llmtr` if you want those gone too.
 
 ## Config
 

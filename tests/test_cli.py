@@ -14,10 +14,12 @@ import logging
 import os
 import signal
 import sys
+from collections.abc import Callable
 
 import pytest
 
 from llmtr import cli, log
+from llmtr.backends import MACOS_PASTE_HINT, Desktop
 from llmtr.config import (
     Config,
     LogConfig,
@@ -25,6 +27,7 @@ from llmtr.config import (
     OllamaConfig,
     State,
     load_state,
+    parse_config,
     save_state,
 )
 from llmtr.engine import Mode
@@ -32,6 +35,7 @@ from llmtr.errors import (
     Cancelled,
     ClipboardUnavailable,
     KeySendError,
+    MacKeySendError,
     ModelMissing,
     OllamaTimeout,
     OllamaUnavailable,
@@ -778,3 +782,280 @@ def test_main_log_without_file_prints_only_path(tmp_path, capsys) -> None:
 
     assert code == cli.EXIT_OK
     assert capsys.readouterr().out == f"{_log_file(tmp_path)}\n"
+
+
+# --- v2 (macOS): platform layer, Desktop bundle, Secure Input, paste hint --------------------
+
+
+@pytest.fixture(autouse=True)
+def _linux_platform_by_default(monkeypatch):
+    """The v1 tests above assume Linux wiring whatever the host OS is (macOS CI runner)."""
+    monkeypatch.setattr(cli, "detect_platform", lambda: "linux")
+
+
+def _mac_desktop(
+    clip: FakeClipboard,
+    keys: FakeKeySender,
+    *,
+    hint: Callable[[], str | None] = lambda: None,
+    app_id: str | None = None,
+) -> Desktop:
+    return Desktop(
+        platform="macos",
+        make_clipboard=lambda: clip,
+        keys=keys,
+        focused_app_id=lambda: app_id,
+        paste_hint=MACOS_PASTE_HINT,
+        empty_selection_hint=hint,
+    )
+
+
+def _mac_config() -> Config:
+    return parse_config({}, platform="macos")
+
+
+def test_run_shortcut_uses_desktop_bundle_and_mac_keys() -> None:
+    clip = FakeClipboard("old")
+    keys = _selecting_keys(clip, "Cześć", copy="cmd+c")
+    hint_calls: list[int] = []
+    desktop = _mac_desktop(clip, keys, hint=lambda: hint_calls.append(1))
+    clock = FakeClock()
+
+    code = cli.run_shortcut(
+        Mode.FIX,
+        _mac_config(),
+        FakeNotifier(),
+        desktop=desktop,
+        client=FakeChatClient("Cześć!"),
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert code == cli.EXIT_OK
+    assert keys.sent == ["cmd+c", "cmd+v"]
+    assert clip.get_text() == "old"
+    assert hint_calls == []  # no Secure Input probe on the happy path
+    assert clock.sleeps[0] == 0.0  # macOS start_delay
+
+
+def test_run_shortcut_desktop_focused_app_selects_override() -> None:
+    from llmtr.config import KeyOverride, KeysConfig
+
+    clip = FakeClipboard("old")
+    keys = _selecting_keys(clip, "txt", copy="cmd+shift+c")
+    config = Config(
+        keys=KeysConfig(
+            copy="cmd+c",
+            paste="cmd+v",
+            start_delay=0.0,
+            override=(KeyOverride(app=("com.apple.Terminal",), copy="cmd+shift+c", paste="cmd+v"),),
+        )
+    )
+    desktop = _mac_desktop(clip, keys, app_id="com.apple.Terminal")
+    clock = FakeClock()
+
+    code = cli.run_shortcut(
+        Mode.FIX,
+        config,
+        FakeNotifier(),
+        desktop=desktop,
+        client=FakeChatClient("ok"),
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert code == cli.EXIT_OK
+    assert keys.sent == ["cmd+shift+c", "cmd+v"]
+
+
+def test_run_shortcut_empty_capture_reports_secure_input_app() -> None:
+    clip = FakeClipboard("old")
+    keys = FakeKeySender()  # nothing arrives on the clipboard
+    notifier = FakeNotifier()
+    chat = FakeChatClient("unused")
+    seen_clipboard: list[str] = []
+    desktop = _mac_desktop(
+        clip, keys, hint=lambda: seen_clipboard.append(clip.get_text()) or "Google Chrome"
+    )
+    clock = FakeClock()
+
+    code = cli.run_shortcut(
+        Mode.TRANSLATE,
+        _mac_config(),
+        notifier,
+        desktop=desktop,
+        client=chat,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert code == cli.EXIT_ERROR
+    assert chat.calls == []
+    assert [n.summary for n in notifier.shown] == [
+        "Nothing copied: secure input is active in Google Chrome."
+    ]
+    assert notifier.shown[-1].urgency == "critical"
+    assert seen_clipboard == ["old"]  # clipboard restored before the probe runs
+    assert clip.get_text() == "old"
+
+
+def test_run_shortcut_empty_capture_without_secure_input_keeps_plain_message() -> None:
+    clip = FakeClipboard("old")
+    notifier = FakeNotifier()
+    clock = FakeClock()
+
+    code = cli.run_shortcut(
+        Mode.TRANSLATE,
+        _mac_config(),
+        notifier,
+        desktop=_mac_desktop(clip, FakeKeySender(), hint=lambda: None),
+        client=FakeChatClient("unused"),
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert code == cli.EXIT_ERROR
+    assert [n.summary for n in notifier.shown] == ["No text selected. Select some text first."]
+
+
+def test_run_shortcut_secure_input_probe_failure_keeps_plain_message() -> None:
+    def _boom() -> str | None:
+        raise RuntimeError("probe broke")
+
+    clip = FakeClipboard("old")
+    notifier = FakeNotifier()
+    clock = FakeClock()
+
+    code = cli.run_shortcut(
+        Mode.FIX,
+        _mac_config(),
+        notifier,
+        desktop=_mac_desktop(clip, FakeKeySender(), hint=_boom),
+        client=FakeChatClient("unused"),
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert code == cli.EXIT_ERROR
+    assert notifier.shown[-1].summary == "No text selected. Select some text first."
+
+
+def test_run_shortcut_paste_failure_uses_desktop_paste_hint() -> None:
+    clip = FakeClipboard("old")
+    keys = FlakyKeySender(clip, "cmd+c", "cmd+v")
+    notifier = FakeNotifier()
+    clock = FakeClock()
+
+    code = cli.run_shortcut(
+        Mode.FIX,
+        _mac_config(),
+        notifier,
+        desktop=_mac_desktop(clip, keys),  # type: ignore[arg-type]
+        client=FakeChatClient("fixed"),
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert code == cli.EXIT_OK
+    assert clip.get_text() == "fixed"
+    assert notifier.shown[-1].summary == "Result copied. Press ⌘V to paste."
+
+
+def test_run_shortcut_linux_paste_hint_unchanged() -> None:
+    clip = FakeClipboard("old")
+    keys = FlakyKeySender(clip, "ctrl+c", "ctrl+v")
+    notifier = FakeNotifier()
+    clock = FakeClock()
+
+    cli.run_shortcut(
+        Mode.FIX,
+        Config(),
+        notifier,
+        clipboard=clip,
+        keys=keys,  # type: ignore[arg-type]
+        client=FakeChatClient("fixed"),
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert notifier.shown[-1].summary == "Result copied. Press Ctrl+V to paste."
+
+
+@pytest.mark.parametrize("reason", ["accessibility", "automation", "timeout", "failed"])
+def test_run_shortcut_mac_key_send_error_is_notified_with_its_message(reason) -> None:
+    clip = FakeClipboard("old")
+    keys = FakeKeySender(fail=MacKeySendError(reason, detail="osascript stderr"))
+    notifier = FakeNotifier()
+
+    code = cli.run_shortcut(
+        Mode.FIX,
+        _mac_config(),
+        notifier,
+        desktop=_mac_desktop(clip, keys),
+        client=FakeChatClient("unused"),
+    )
+
+    assert code == cli.EXIT_ERROR
+    assert clip.get_text() == "old"
+    assert notifier.shown[-1].summary == MacKeySendError.MESSAGES[reason]
+    assert notifier.shown[-1].urgency == "critical"
+
+
+def test_main_macos_wires_platform_backends(monkeypatch) -> None:
+    clip = FakeClipboard("old")
+    keys = _selecting_keys(clip, "txt", copy="cmd+c")
+    notifier = FakeNotifier()
+    made: dict[str, object] = {}
+
+    def fake_make_notifier(platform, backend="auto", env=None):
+        made["notifier"] = (platform, backend)
+        return notifier
+
+    def fake_make_desktop(platform=None, env=None, *, keys_config=None):
+        made["desktop"] = (platform, keys_config.copy, keys_config.start_delay)
+        return _mac_desktop(clip, keys)
+
+    monkeypatch.setattr(cli, "detect_platform", lambda: "macos")
+    monkeypatch.setattr(cli.backends, "make_notifier", fake_make_notifier)
+    monkeypatch.setattr(cli.backends, "make_desktop", fake_make_desktop)
+    monkeypatch.setattr(cli, "OllamaClient", lambda url, timeout: FakeChatClient("fixed"))
+
+    code = cli.main(["fix"])
+
+    assert code == cli.EXIT_OK
+    assert made["notifier"] == ("macos", "auto")
+    assert made["desktop"] == ("macos", "cmd+c", 0.0)  # macOS key defaults reached the config
+    assert keys.sent == ["cmd+c", "cmd+v"]
+
+
+def test_main_macos_uses_configured_notify_backend(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('[notify]\nbackend = "osascript"\n', encoding="utf-8")
+    backends_seen: list[str] = []
+    notifier = FakeNotifier()
+    monkeypatch.setattr(cli, "detect_platform", lambda: "macos")
+    monkeypatch.setattr(
+        cli.backends,
+        "make_notifier",
+        lambda platform, backend="auto", env=None: backends_seen.append(backend) or notifier,
+    )
+
+    assert cli.main(["--config", str(path), "tone", "--show"]) == cli.EXIT_OK
+
+    assert backends_seen == ["osascript"]
+    assert notifier.shown[0].summary.startswith("Tone: team")
+
+
+def test_main_macos_bad_notify_backend_notifies_with_config_error(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('[notify]\nbackend = "growl"\n', encoding="utf-8")
+    notifier = FakeNotifier()
+    monkeypatch.setattr(cli, "detect_platform", lambda: "macos")
+    monkeypatch.setattr(cli.backends, "make_notifier", lambda platform, backend="auto": notifier)
+
+    assert cli.main(["--config", str(path), "fix"]) == cli.EXIT_ERROR
+
+    assert notifier.shown[0].summary == (
+        f"Config error in {path}: 'notify.backend' must be one of auto, hammerspoon, osascript"
+    )
+    assert notifier.shown[0].urgency == "critical"

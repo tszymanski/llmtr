@@ -9,11 +9,15 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from llmtr.clipboard import Clipboard
+from llmtr.clipboard import Clipboard, make_clipboard
 from llmtr.config import KeysConfig
-from llmtr.keys import KeySender
-from llmtr.notify import Notifier
-from llmtr.platforms import Platform
+from llmtr.keys import KeySender, YdotoolKeySender, focused_app_id
+from llmtr.macos_clipboard import PbClipboard
+from llmtr.macos_keys import OsascriptKeySender
+from llmtr.macos_notify import HammerspoonNotifier, OsascriptNotifier
+from llmtr.macos_probes import focused_bundle_id, secure_input_app
+from llmtr.notify import Notifier, NotifySendNotifier
+from llmtr.platforms import Platform, detect_platform
 
 LINUX_PASTE_HINT = "Result copied. Press Ctrl+V to paste."
 MACOS_PASTE_HINT = "Result copied. Press ⌘V to paste."
@@ -45,7 +49,11 @@ def make_notifier(
     """Linux: ``NotifySendNotifier()``. macOS: ``HammerspoonNotifier(env)`` for ``"auto"`` and
     ``"hammerspoon"``, ``OsascriptNotifier()`` for ``"osascript"``. ``platform`` defaults to
     ``detect_platform()``. Safe before the config is loaded (``backend="auto"``)."""
-    raise NotImplementedError
+    if (platform if platform is not None else detect_platform()) == "macos":
+        if backend == "osascript":
+            return OsascriptNotifier()
+        return HammerspoonNotifier(env)
+    return NotifySendNotifier()
 
 
 def make_desktop(
@@ -57,7 +65,28 @@ def make_desktop(
     """Linux: ``make_clipboard(env)``, ``YdotoolKeySender(env)``, ``keys.focused_app_id``
     (exactly today's wiring). macOS: ``PbClipboard(env)``, ``OsascriptKeySender()``, the probes.
     ``keys_config`` (default ``KeysConfig()``) decides whether macOS queries the focused app."""
-    raise NotImplementedError
+    if (platform if platform is not None else detect_platform()) == "macos":
+        config = keys_config if keys_config is not None else KeysConfig()
+        return Desktop(
+            platform="macos",
+            make_clipboard=lambda: PbClipboard(env),
+            keys=OsascriptKeySender(),
+            focused_app_id=focused_bundle_id if config.override else _no_app,
+            paste_hint=MACOS_PASTE_HINT,
+            empty_selection_hint=secure_input_app,
+        )
+    return Desktop(
+        platform="linux",
+        make_clipboard=lambda: make_clipboard(env),
+        keys=YdotoolKeySender(env),
+        focused_app_id=focused_app_id,
+        paste_hint=LINUX_PASTE_HINT,
+        empty_selection_hint=_no_app,
+    )
+
+
+def _no_app() -> str | None:
+    return None
 
 
 __all__ = [

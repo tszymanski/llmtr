@@ -129,11 +129,11 @@ def _write_fake(path: Path, content: str) -> None:
 
 
 # The only real binaries install.sh's own code and the fake scripts above need: bash (to run
-# install.sh and, via each fake's "#!/usr/bin/env bash" shebang, itself), dirname/grep/tr/head
+# install.sh and, via each fake's "#!/usr/bin/env bash" shebang, itself), dirname/grep/tr/head/uname
 # (install.sh), and touch/grep/tail/sed/mv (the GSETTINGS_FAKE state file dance). Resolved once
 # per test session via shutil.which and symlinked into every fake_bin, so a test's PATH never
 # needs to fall back to the inherited (host) PATH to find them.
-MINIMAL_TOOLS = ("bash", "grep", "sed", "tr", "head", "tail", "dirname", "mv", "touch")
+MINIMAL_TOOLS = ("bash", "grep", "sed", "tr", "head", "tail", "dirname", "mv", "touch", "uname")
 
 
 @pytest.fixture(scope="session")

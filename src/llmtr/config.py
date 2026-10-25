@@ -20,12 +20,16 @@ from pathlib import Path
 from typing import Any
 
 from llmtr.errors import ConfigError
+from llmtr.platforms import Platform, key_defaults
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 """Used when neither ``OLLAMA_HOST`` nor ``[ollama] url`` is set."""
 
 OLLAMA_HOST_ENV = "OLLAMA_HOST"
 """Environment variable that overrides ``[ollama] url`` (same meaning as for the ollama CLI)."""
+
+NOTIFY_BACKENDS = ("auto", "hammerspoon", "osascript")
+"""Valid values of ``[notify] backend``."""
 
 LOG_LEVEL_ENV = "LLMTR_LOG_LEVEL"
 """Environment variable that overrides ``[log] level``."""
@@ -133,7 +137,7 @@ class NotifyConfig:
     enabled: bool = True
     backend: str = "auto"
     """v2 (macOS): ``"auto"`` (= ``"hammerspoon"``), ``"hammerspoon"`` or ``"osascript"``. Ignored
-    on Linux. Parsed from ``notify.backend`` by M10 (``parse_config`` ignores it until then)."""
+    on Linux. Parsed from ``notify.backend``."""
 
 
 @dataclass(frozen=True)
@@ -331,8 +335,14 @@ def parse_config(
     data: Mapping[str, Any],
     env: Mapping[str, str] | None = None,
     source: Path | str = "config.toml",
+    *,
+    platform: Platform = "linux",
 ) -> Config:
     """Build a ``Config`` from already-parsed TOML data (pure; the unit-test entry point).
+
+    ``platform`` only changes the defaults of ``keys.copy``/``keys.paste``/``keys.start_delay``
+    when the user did not set them (macOS: ``cmd+c``/``cmd+v``/``0``); a value in the file
+    always wins. ``notify.backend`` must be ``auto``, ``hammerspoon`` or ``osascript``.
 
     Missing keys take dataclass defaults; unknown keys are ignored. A non-empty ``OLLAMA_HOST``
     in ``env`` overrides ``[ollama] url``; the final URL goes through ``normalize_ollama_url``.
@@ -411,11 +421,12 @@ def parse_config(
     languages = LanguagesConfig(native=native, other=other)
 
     keys_table = _require_table(data, "keys", source)
+    key_default = key_defaults(platform)
     keys = KeysConfig(
-        copy=_as_str(keys_table, "copy", KeysConfig.copy, "keys.copy", source),
-        paste=_as_str(keys_table, "paste", KeysConfig.paste, "keys.paste", source),
+        copy=_as_str(keys_table, "copy", key_default.copy, "keys.copy", source),
+        paste=_as_str(keys_table, "paste", key_default.paste, "keys.paste", source),
         start_delay=_as_number(
-            keys_table, "start_delay", KeysConfig.start_delay, "keys.start_delay", source
+            keys_table, "start_delay", key_default.start_delay, "keys.start_delay", source
         ),
         copy_timeout=_as_number(
             keys_table, "copy_timeout", KeysConfig.copy_timeout, "keys.copy_timeout", source
@@ -431,8 +442,11 @@ def parse_config(
 
     notify_table = _require_table(data, "notify", source)
     notify = NotifyConfig(
-        enabled=_as_bool(notify_table, "enabled", NotifyConfig.enabled, "notify.enabled", source)
+        enabled=_as_bool(notify_table, "enabled", NotifyConfig.enabled, "notify.enabled", source),
+        backend=_as_str(notify_table, "backend", NotifyConfig.backend, "notify.backend", source),
     )
+    if notify.backend not in NOTIFY_BACKENDS:
+        raise ConfigError(source, f"'notify.backend' must be one of {', '.join(NOTIFY_BACKENDS)}")
 
     log_table = _require_table(data, "log", source)
     level = _as_str(log_table, "level", LogConfig.level, "log.level", source)
@@ -458,8 +472,13 @@ def parse_config(
     )
 
 
-def load_config(path: Path | None = None, env: Mapping[str, str] | None = None) -> Config:
-    """Read ``path`` (default ``config_path(env)``) and call ``parse_config``.
+def load_config(
+    path: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    *,
+    platform: Platform = "linux",
+) -> Config:
+    """Read ``path`` (default ``config_path(env)``) and call ``parse_config`` with ``platform``.
 
     A missing file gives the defaults (still applying ``OLLAMA_HOST``). Invalid TOML raises
     ``ConfigError``.
@@ -467,7 +486,7 @@ def load_config(path: Path | None = None, env: Mapping[str, str] | None = None) 
     env = env if env is not None else os.environ
     cfg_path = path if path is not None else config_path(env)
     if not cfg_path.exists():
-        return parse_config({}, env=env, source=cfg_path)
+        return parse_config({}, env=env, source=cfg_path, platform=platform)
     try:
         with cfg_path.open("rb") as f:
             data = tomllib.load(f)
@@ -475,7 +494,7 @@ def load_config(path: Path | None = None, env: Mapping[str, str] | None = None) 
         raise ConfigError(cfg_path, f"invalid TOML: {exc}") from exc
     except OSError as exc:
         raise ConfigError(cfg_path, str(exc)) from exc
-    return parse_config(data, env=env, source=cfg_path)
+    return parse_config(data, env=env, source=cfg_path, platform=platform)
 
 
 # --- state & tone ------------------------------------------------------------------------
@@ -541,6 +560,7 @@ def save_last_result(text: str, directory: Path | None = None) -> Path:
 __all__ = [
     "DEFAULT_OLLAMA_URL",
     "LOG_LEVEL_ENV",
+    "NOTIFY_BACKENDS",
     "OLLAMA_HOST_ENV",
     "SUPPORTED_LANGUAGES",
     "TEAM_TONE",
