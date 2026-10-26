@@ -28,6 +28,7 @@ One row per task. Times in local time (Europe/Warsaw).
 | M11-fix1 | Integration worker (claude in sbx) | sbx llmtr-m11-fix1 | 2026-10-26 13:00 | ~13:05 | 0 (orchestrator review PASS) | merged | reruns: none; Linux installer tests set LLMTR_UNAME=Linux (+1 test); host: 471 passed, LLMTR_UNAME=Darwin install tests 44 passed |
 | M12-fix1 | Integration worker (claude in sbx) | sbx llmtr-m12-fix1 | 2026-10-26 15:20 | ~15:30 | 0 (orchestrator review PASS) | merged | reruns: none; D1 message names Device Control and Data Access, D2 uv_build <0.14, D3-D5 README |
 | M12-fix2 | Mac fix worker (Claude Code on the user's Mac, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | – | – | – | scheduled | cancel shows two bubbles (Translating… + Cancelled.); diagnose on the Mac, fix Lua/cli/notify; may change code |
+| M11-fix2 | Integration worker (claude in sbx) | sbx llmtr-m11-fix2 | 2026-10-26 | – | – | running | CI test-macos: empty array under set -u on bash 3.2 makes install.sh write an empty keybinding list (confirmed in docker bash:3.2) |
 
 ## Lessons
 
