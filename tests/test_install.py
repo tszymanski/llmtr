@@ -174,6 +174,8 @@ def _run(args: list[str], fake_bin: Path, env_extra: dict[str, str] | None = Non
     # real one explicitly symlinked into fake_bin by MINIMAL_TOOLS.
     env["PATH"] = str(fake_bin)
     env["FAKE_BIN_LOG"] = str(fake_bin)
+    # These tests cover the Linux installer; force it so a macOS runner does not dispatch to macOS.
+    env["LLMTR_UNAME"] = "Linux"
     env.update(env_extra or {})
     return subprocess.run(
         ["bash", str(INSTALL_SH), *args],
@@ -226,6 +228,17 @@ def test_dry_run_prints_commands_without_running_them(fake_bin: Path) -> None:
     gsettings_log_lines = _gsettings_log(fake_bin).splitlines()
     assert not any(line.startswith("gsettings set") for line in gsettings_log_lines)
     assert _uv_log(fake_bin) == ""
+
+
+def test_linux_path_is_taken_even_with_darwin_in_outer_env(
+    fake_bin: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LLMTR_UNAME", "Darwin")
+
+    result = _run(["--dry-run"], fake_bin)
+
+    assert result.returncode == 0, result.stderr
+    assert "+ gsettings set" in result.stdout
 
 
 def test_dry_run_prints_all_five_bindings(fake_bin: Path) -> None:

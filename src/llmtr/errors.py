@@ -124,7 +124,7 @@ class MacKeySendError(KeySendError):
     MESSAGES = {
         "accessibility": (
             "Keystrokes blocked. Turn on Hammerspoon in System Settings > Privacy & Security > "
-            "Accessibility."
+            "Device Control and Data Access (Accessibility)."
         ),
         "automation": (
             "Keystrokes blocked. In System Settings > Privacy & Security > Automation, allow "

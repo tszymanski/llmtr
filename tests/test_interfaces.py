@@ -284,7 +284,7 @@ def test_macos_errors_carry_user_messages() -> None:
     assert isinstance(accessibility, errors.KeySendError)
     assert (
         "Hammerspoon" in accessibility.user_message
-        and "Accessibility" in accessibility.user_message
+        and "Device Control and Data Access (Accessibility)" in accessibility.user_message
     )
     assert "Hammerspoon" in automation.user_message and "Automation" in automation.user_message
     assert str(automation) == automation.user_message

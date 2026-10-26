@@ -112,7 +112,7 @@ macOS lets nobody grant these by script, so you do it once. All three are for **
 
 1. **Privacy & Security → Accessibility** (titled **Device Control and Data Access** on macOS 27):
    turn Hammerspoon on. Without it `osascript` fails with "osascript is not allowed to send
-   keystrokes (1002)" and `llmtr` tells you to turn Hammerspoon on here. No `osascript` entry is
+   keystrokes (1002)" and `llmtr` tells you to turn Hammerspoon on there. No `osascript` entry is
    needed.
 2. **Privacy & Security → Automation → Hammerspoon → System Events**: on. At the first copy macOS
    asks *"“Hammerspoon” wants access to control “System Events”. Allowing control will provide access
@@ -127,8 +127,9 @@ clipboard there, because it would process stale clipboard text.
 
 ### macOS notifications
 
-By default `llmtr` shows its messages through Hammerspoon, as one bubble per run: "Translating…" is
-replaced by the result or the error and disappears a few seconds after the run. If no Hammerspoon
+By default `llmtr` shows its messages through Hammerspoon, as one bubble per run: "Translating…" stays
+while the job runs and disappears a few seconds after it ends. On success the pasted text is the
+result; errors and "Cancelled." get their own bubble. If no Hammerspoon
 bubbles appear (Notifications not allowed, or you prefer not to), set in
 `~/.config/llmtr/config.toml`:
 
@@ -168,7 +169,7 @@ If the rule is enabled but Caps Lock keeps toggling (Karabiner gives no warning)
    on, then restart Karabiner-Elements. (Karabiner 16; older versions used `karabiner_grabber` and
    `karabiner_observer`.)
 3. Karabiner Settings → Devices → your keyboard (e.g. Apple Internal Keyboard): *Modify events* on.
-4. ISO keyboards: Devices → *Swap ISO layout-specific keys* on, or `` ` ``/`~` produce `§`.
+4. ISO keyboards: Devices → *Swap ISO layout-specific keys* on, or the `` ` ``/`~` key and the key next to left Shift are swapped (e.g. `§` or `£` appears).
 5. Check in Karabiner-EventViewer: Caps held + `T` must show `left_control` and `left_option`, then `t`.
 
 ### macOS troubleshooting
@@ -178,6 +179,8 @@ If the rule is enabled but Caps Lock keeps toggling (Karabiner gives no warning)
 - **"Nothing copied: secure input is active in …"** — the app (often a browser with a focused
   password field, or a password manager) turned on Secure Input, which blocks the copy keystroke.
   Leave the field or close the app that holds it.
+- **iTerm and the clipboard** — iTerm copies a selection to the clipboard by itself (Settings >
+  General > Selection), so after a shortcut in iTerm the clipboard holds the selected text.
 - **"No text selected"** — nothing was selected, or the app ignored `⌘C`.
 - **Polish letters come out garbled** — report it with `llmtr log`; `llmtr` runs `pbcopy` and
   `pbpaste` with `LC_CTYPE=UTF-8` because Hammerspoon's children have no locale.

@@ -609,7 +609,7 @@ message, see 21).
 
 | osascript result | reason | user message |
 | --- | --- | --- |
-| stderr has `(1002)` / "not allowed to send keystrokes" | `accessibility` | `Keystrokes blocked. Turn on Hammerspoon in System Settings > Privacy & Security > Accessibility.` |
+| stderr has `(1002)` / "not allowed to send keystrokes" | `accessibility` | `Keystrokes blocked. Turn on Hammerspoon in System Settings > Privacy & Security > Device Control and Data Access (Accessibility).` |
 | stderr has `(-1743)` / "Not authorized to send Apple events" | `automation` | `Keystrokes blocked. In System Settings > Privacy & Security > Automation, allow Hammerspoon to control System Events.` |
 | `TimeoutExpired` (dialog unanswered) | `timeout` | `Keystrokes timed out. Answer the Hammerspoon permission prompt, then retry.` |
 | other non-zero exit, `OSError` | `failed` | `Could not send keystrokes. See: llmtr log` |
@@ -770,7 +770,7 @@ surprise. The user gets the exact fix instead. Clipboard-only still applies to a
 
 | Situation | Detected in | Notification (summary) | Urgency | Clipboard |
 | --- | --- | --- | --- | --- |
-| No Accessibility (osascript 1002) | `OsascriptKeySender.send` (copy) | `Keystrokes blocked. Turn on Hammerspoon in System Settings > Privacy & Security > Accessibility.` | critical | restored |
+| No Accessibility (osascript 1002) | `OsascriptKeySender.send` (copy) | `Keystrokes blocked. Turn on Hammerspoon in System Settings > Privacy & Security > Device Control and Data Access (Accessibility).` | critical | restored |
 | Automation denied (−1743) | `OsascriptKeySender.send` (copy) | `Keystrokes blocked. In System Settings > Privacy & Security > Automation, allow Hammerspoon to control System Events.` | critical | restored |
 | Automation dialog unanswered | `OsascriptKeySender.send` (timeout) | `Keystrokes timed out. Answer the Hammerspoon permission prompt, then retry.` | critical | restored |
 | osascript failed otherwise | `OsascriptKeySender.send` | `Could not send keystrokes. See: llmtr log` | critical | restored |

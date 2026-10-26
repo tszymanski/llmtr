@@ -23,9 +23,11 @@ One row per task. Times in local time (Europe/Warsaw).
 | M9-architecture-macos | Architect (claude in sbx, Sonnet 5.5) | sbx llmtr-m9-arch | 2026-10-25 22:50 | 23:02 | 0 (reviewer PASS, 4 minor) | merged | reruns: none; 7 stub modules, architecture §11-22, M10/M11 split; user approved 4 open points incl. permission failure = error (not clipboard-only) |
 | M10-macos-backends | Desktop worker (claude in sbx, Sonnet 5.5) | sbx llmtr-m10 | 2026-10-25 23:28 | ~23:33 | 0 (reviewer PASS, 2 minor) | merged | reruns: 5 (over limit 3; lint line length/import order + 1 pytest after removing imports v1 tests patch; worker did not stop, reported it); deviation: Linux wiring stays in cli.py (v1 tests patch cli names), backends Linux branch unused; first review failed (sandbox OAuth expired), rerun in fresh sandbox llmtr-m10-rev; 444 tests |
 | M11-macos-install | Integration worker (claude in sbx, Sonnet 5.5) | sbx llmtr-m11 | 2026-10-25 23:28 | 2026-10-26 ~10:20 | 1 (FIX: bash 3.2 keeps quotes in ${x//p/"r"} -> broken llmtr.lua; withdraw timers GC'd; uninstall dropped trailing blank lines) | merged | reruns: none; 20+3 installer tests incl. BASH_COMPAT=31/42; zizmor 0 on host; Settings URLs and real bash 3.2 to verify on the Mac (M12) |
-| M12-mac-acceptance | Mac acceptance worker (Claude Code on the user's Mac, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | – | – | – | scheduled | real install from README, A1-A13 checklist (bash 3.2, Settings URLs, permissions, 5 shortcuts, 6 apps, Polish, notifications, cancel, Secure Input, uninstall); no code changes |
-| M13-backends-cleanup | Desktop worker (claude in sbx) | – | – | – | – | parked (after M12) | user-approved follow-up: route Linux wiring in cli.py through backends.py and update v1 tests in test_cli.py that patch cli names |
-| M11-fix1 | Integration worker (claude in sbx) | sbx llmtr-m11-fix1 | 2026-10-26 | – | – | running | CI test-macos: 14 Linux installer tests dispatched to install-macos.sh (no LLMTR_UNAME); reproduced with LLMTR_UNAME=Darwin |
+| M12-mac-acceptance | Mac acceptance worker (Claude Code on the user's Mac, Opus 5.5, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | 2026-10-26 | 2026-10-26 | – (acceptance) | merged | A1-A13: 12 PASS, A3 PARTIAL; verdict ready with minor fixes; D1 Accessibility message names a pane macOS 27 calls Device Control and Data Access; D2 uv-build range warning; D3-D5 README; reruns: 4 procedure repeats, none for a failure |
+| M13-backends-cleanup | Desktop worker (claude in sbx) | sbx llmtr-m13 | 2026-10-26 15:20 | ~15:35 | 0 (orchestrator review PASS) | merged | reruns: none; cli.py uses backends.py on both platforms (one place, arch 12), v1 tests patch llmtr.backends; 55 cli tests kept; 471 passed also with LLMTR_UNAME=Darwin |
+| M11-fix1 | Integration worker (claude in sbx) | sbx llmtr-m11-fix1 | 2026-10-26 13:00 | ~13:05 | 0 (orchestrator review PASS) | merged | reruns: none; Linux installer tests set LLMTR_UNAME=Linux (+1 test); host: 471 passed, LLMTR_UNAME=Darwin install tests 44 passed |
+| M12-fix1 | Integration worker (claude in sbx) | sbx llmtr-m12-fix1 | 2026-10-26 15:20 | ~15:30 | 0 (orchestrator review PASS) | merged | reruns: none; D1 message names Device Control and Data Access, D2 uv_build <0.14, D3-D5 README |
+| M12-fix2 | Mac fix worker (Claude Code on the user's Mac, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | – | – | – | scheduled | cancel shows two bubbles (Translating… + Cancelled.); diagnose on the Mac, fix Lua/cli/notify; may change code |
 
 ## Lessons
 
@@ -70,3 +72,6 @@ idempotent `install.sh`.
   `BASH_COMPAT=31` (pattern substitution with quotes differs between bash versions).
 - Reviewers may skim tests ("did not read the new test files line by line"); the orchestrator
   spot-checks that each test the contract demands exists.
+- A platform dispatch keyed on `uname` changes what **existing** tests do on another OS. When adding
+  one, run the suite with the other value forced (`LLMTR_UNAME=Darwin`) before merging; the first
+  real macOS CI run caught 14 failures the Linux runs could not.

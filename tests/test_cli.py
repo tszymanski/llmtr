@@ -3,8 +3,9 @@
 ``run_shortcut`` is tested directly with fakes injected through its keyword-only parameters
 (``clipboard``, ``keys``, ``client``, ``lock``, ``sleep``/``monotonic``, ``kill``); ``main`` is
 tested the same way plus by monkeypatching the module-level factories it calls
-(``make_clipboard``, ``YdotoolKeySender``, ``OllamaClient``, ``NotifySendNotifier``) so no test
-touches a real desktop tool, Ollama, or sends a real signal to another process.
+(``backends.make_clipboard``, ``backends.YdotoolKeySender``, ``backends.NotifySendNotifier``,
+``cli.OllamaClient``) so no test touches a real desktop tool, Ollama, or sends a real signal to
+another process.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from collections.abc import Callable
 
 import pytest
 
-from llmtr import cli, log
+from llmtr import backends, cli, log
 from llmtr.backends import MACOS_PASTE_HINT, Desktop
 from llmtr.config import (
     Config,
@@ -350,7 +351,7 @@ def test_run_shortcut_no_clipboard_tool_notifies_critical(monkeypatch) -> None:
     def _raise(env=None):
         raise ClipboardUnavailable("no wl-clipboard or xclip")
 
-    monkeypatch.setattr(cli, "make_clipboard", _raise)
+    monkeypatch.setattr(backends, "make_clipboard", _raise)
     notifier = FakeNotifier()
 
     code = cli.run_shortcut(Mode.FIX, Config(), notifier, keys=FakeKeySender())
@@ -440,7 +441,7 @@ def test_main_tone_next_stdin_is_usage_error(capsys) -> None:
 
 def test_main_tone_next_single_preset_notes_only_preset(monkeypatch) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
 
     code = cli.main(["tone", "--next"])
 
@@ -451,7 +452,7 @@ def test_main_tone_next_single_preset_notes_only_preset(monkeypatch) -> None:
 
 def test_main_tone_next_cycles_between_two_presets(monkeypatch, tmp_path) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
     config_file = tmp_path / "config.toml"
     config_file.write_text('[[tone.preset]]\nname = "formal"\ninstruction = "Be formal."\n')
 
@@ -474,7 +475,7 @@ def _three_preset_config_file(tmp_path):
 
 def test_main_tone_show_notifies_name_index_and_instruction(monkeypatch, tmp_path) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
     config_file = _three_preset_config_file(tmp_path)
     save_state(State(tone="formal"))
 
@@ -488,7 +489,7 @@ def test_main_tone_show_notifies_name_index_and_instruction(monkeypatch, tmp_pat
 
 def test_main_tone_show_falls_back_when_stored_tone_is_unknown(monkeypatch, tmp_path) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
     config_file = _three_preset_config_file(tmp_path)
     save_state(State(tone="does-not-exist"))
 
@@ -519,14 +520,14 @@ def test_main_tone_show_and_next_together_is_usage_error(capsys) -> None:
 
 def test_main_tone_show_does_not_touch_clipboard_keys_or_client(monkeypatch, tmp_path) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
     config_file = _three_preset_config_file(tmp_path)
 
     def _boom(*args, **kwargs):
         raise AssertionError("tone --show must not touch this")
 
-    monkeypatch.setattr(cli, "make_clipboard", _boom)
-    monkeypatch.setattr(cli, "YdotoolKeySender", _boom)
+    monkeypatch.setattr(backends, "make_clipboard", _boom)
+    monkeypatch.setattr(backends, "YdotoolKeySender", _boom)
     monkeypatch.setattr(cli, "OllamaClient", _boom)
 
     code = cli.main(["--config", str(config_file), "tone", "--show"])
@@ -537,7 +538,7 @@ def test_main_tone_show_does_not_touch_clipboard_keys_or_client(monkeypatch, tmp
 
 def test_main_bad_config_notifies_and_returns_error(monkeypatch, tmp_path) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
     bad_config = tmp_path / "bad.toml"
     bad_config.write_text("ollama = 5\n")
 
@@ -550,7 +551,7 @@ def test_main_bad_config_notifies_and_returns_error(monkeypatch, tmp_path) -> No
 
 def test_main_bad_config_writes_error_to_log(monkeypatch, tmp_path) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
     bad_config = tmp_path / "bad.toml"
     bad_config.write_text("ollama = 5\n")
 
@@ -566,7 +567,7 @@ def test_main_stdin_bad_config_prints_to_stderr_not_notification(
     monkeypatch, tmp_path, capsys
 ) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
     bad_config = tmp_path / "bad.toml"
     bad_config.write_text("ollama = 5\n")
 
@@ -581,9 +582,9 @@ def test_main_fix_mode_end_to_end_with_monkeypatched_factories(monkeypatch) -> N
     clip = FakeClipboard("old")
     keys = _selecting_keys(clip, "txt to fix")
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "make_clipboard", lambda: clip)
-    monkeypatch.setattr(cli, "YdotoolKeySender", lambda: keys)
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "make_clipboard", lambda env=None: clip)
+    monkeypatch.setattr(backends, "YdotoolKeySender", lambda env=None: keys)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
     monkeypatch.setattr(cli, "OllamaClient", lambda url, timeout: FakeChatClient("fixed txt"))
 
     code = cli.main(["fix"])
@@ -608,7 +609,7 @@ def test_run_shortcut_llmtr_error_writes_error_log_with_detail(monkeypatch, tmp_
     def _raise(env=None):
         raise ClipboardUnavailable("Nothing is copied")
 
-    monkeypatch.setattr(cli, "make_clipboard", _raise)
+    monkeypatch.setattr(backends, "make_clipboard", _raise)
     notifier = FakeNotifier()
     logger = log.setup_logging(LogConfig())
 
@@ -671,7 +672,7 @@ def test_run_shortcut_success_writes_info_line_without_sample_text(tmp_path) -> 
 
 def test_main_tone_next_writes_info_line(monkeypatch, tmp_path) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
 
     code = cli.main(["tone", "--next"])
 
@@ -687,7 +688,7 @@ def test_main_tone_next_writes_info_line(monkeypatch, tmp_path) -> None:
 
 def test_main_tone_show_writes_info_line(monkeypatch, tmp_path) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
 
     code = cli.main(["tone", "--show"])
 
@@ -705,7 +706,7 @@ def test_main_tone_next_unexpected_exception_logged_and_notifies_log_path(
     monkeypatch, tmp_path
 ) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
 
     def _raise(state=None):
         raise RuntimeError("boom")
@@ -728,7 +729,7 @@ def test_main_tone_show_unexpected_exception_logged_and_notifies_log_path(
     monkeypatch, tmp_path
 ) -> None:
     notifier = FakeNotifier()
-    monkeypatch.setattr(cli, "NotifySendNotifier", lambda: notifier)
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
 
     def _raise(config, state):
         raise RuntimeError("boom")
@@ -1016,8 +1017,8 @@ def test_main_macos_wires_platform_backends(monkeypatch) -> None:
         return _mac_desktop(clip, keys)
 
     monkeypatch.setattr(cli, "detect_platform", lambda: "macos")
-    monkeypatch.setattr(cli.backends, "make_notifier", fake_make_notifier)
-    monkeypatch.setattr(cli.backends, "make_desktop", fake_make_desktop)
+    monkeypatch.setattr(backends, "make_notifier", fake_make_notifier)
+    monkeypatch.setattr(backends, "make_desktop", fake_make_desktop)
     monkeypatch.setattr(cli, "OllamaClient", lambda url, timeout: FakeChatClient("fixed"))
 
     code = cli.main(["fix"])
@@ -1051,7 +1052,7 @@ def test_main_macos_bad_notify_backend_notifies_with_config_error(monkeypatch, t
     path.write_text('[notify]\nbackend = "growl"\n', encoding="utf-8")
     notifier = FakeNotifier()
     monkeypatch.setattr(cli, "detect_platform", lambda: "macos")
-    monkeypatch.setattr(cli.backends, "make_notifier", lambda platform, backend="auto": notifier)
+    monkeypatch.setattr(backends, "make_notifier", lambda platform, backend="auto": notifier)
 
     assert cli.main(["--config", str(path), "fix"]) == cli.EXIT_ERROR
 

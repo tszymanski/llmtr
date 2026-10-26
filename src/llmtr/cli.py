@@ -18,8 +18,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from llmtr import backends, log
-from llmtr.backends import LINUX_PASTE_HINT, Desktop
-from llmtr.clipboard import Clipboard, make_clipboard
+from llmtr.backends import Desktop
+from llmtr.clipboard import Clipboard
 from llmtr.config import (
     Config,
     State,
@@ -32,11 +32,11 @@ from llmtr.config import (
 )
 from llmtr.engine import Mode, plan_job, progress_text, run_job
 from llmtr.errors import Cancelled, EmptySelection, LlmtrError, SecureInputActive
-from llmtr.keys import KeySender, YdotoolKeySender, focused_app_id, resolve_key_pair
+from llmtr.keys import KeySender, resolve_key_pair
 from llmtr.lock import RunLock, cancel_running, default_lock_path, install_cancel_handler
-from llmtr.notify import Notifier, NotifySendNotifier
+from llmtr.notify import Notifier
 from llmtr.ollama_client import ChatClient, OllamaClient
-from llmtr.platforms import Platform, detect_platform
+from llmtr.platforms import detect_platform
 from llmtr.selection import Captured, capture_selection, deliver_result, restore_clipboard
 
 EXIT_OK = 0
@@ -139,12 +139,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.stdin:
             print(exc.user_message, file=sys.stderr)
         else:
-            _make_notifier(platform).notify(exc.user_message, urgency="critical")
+            backends.make_notifier(platform).notify(exc.user_message, urgency="critical")
         return EXIT_ERROR
 
     logger = log.setup_logging(config.log)
 
-    notifier = None if args.stdin else _make_notifier(platform, config.notify.backend)
+    notifier = None if args.stdin else backends.make_notifier(platform, config.notify.backend)
 
     if mode == Mode.TONE and next_flag:
         return _run_tone_next(config, notifier, logger=logger)
@@ -158,7 +158,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.stdin:
         return _run_stdin(mode, config, quality=quality, model=model, logger=logger)
 
-    desktop = _make_desktop(platform, config)
+    desktop = backends.make_desktop(platform, keys_config=config.keys)
     return run_shortcut(
         mode, config, notifier, quality=quality, model=model, desktop=desktop, logger=logger
     )
@@ -313,28 +313,6 @@ def _run_stdin(
             )
 
 
-def _make_notifier(platform: Platform, backend: str = "auto") -> Notifier:
-    """``backends.make_notifier``; on Linux the names imported here are used, so the v1 tests
-    (which patch ``cli.NotifySendNotifier``) and v1 behaviour stay exactly as they were."""
-    if platform == "linux":
-        return NotifySendNotifier()
-    return backends.make_notifier(platform, backend)
-
-
-def _make_desktop(platform: Platform, config: Config) -> Desktop:
-    """``backends.make_desktop``; Linux is wired from the names imported here (see above)."""
-    if platform == "linux":
-        return Desktop(
-            platform="linux",
-            make_clipboard=make_clipboard,
-            keys=YdotoolKeySender(),
-            focused_app_id=focused_app_id,
-            paste_hint=LINUX_PASTE_HINT,
-            empty_selection_hint=lambda: None,
-        )
-    return backends.make_desktop(platform, keys_config=config.keys)
-
-
 def _is_plain_empty_capture(exc: LlmtrError) -> bool:
     return (
         isinstance(exc, EmptySelection)
@@ -383,7 +361,7 @@ def run_shortcut(
     ``docs/architecture.md`` section 3.1.
     """
     if desktop is None:
-        desktop = _make_desktop(detect_platform(), config)
+        desktop = backends.make_desktop(detect_platform(), keys_config=config.keys)
     run_lock = lock if lock is not None else RunLock(default_lock_path())
     if not run_lock.acquire():
         cancel_running(run_lock, kill=kill)
