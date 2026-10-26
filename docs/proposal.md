@@ -177,8 +177,10 @@ on a private clone of the repo.
 
 ## macOS support (v2)
 
-Decisions by the user, 2026-10-22 and (after the M8 spike) 2026-10-25. Status: **approved**; M8 spike
-done (`docs/tasks/M8-spike.result.md`), M9 architecture next.
+Decisions by the user, 2026-10-22 and (after the M8 spike) 2026-10-25. Status: **done, closed by the
+user 2026-10-27.** All milestones below are merged, M12 acceptance passed on the test Mac, and CI is
+green on Linux and macOS (Python 3.13 and 3.14). Task records: `docs/tasks/M8-*` to `M13-*`; timing,
+review rounds and lessons: `docs/orchestration-log.md`.
 
 ### Goal
 
@@ -274,18 +276,28 @@ a visible "Translating…" notification and a working cancel matter more than on
 
 ### Milestones (v2)
 
-7. **M8 — macOS spike** — **done 2026-10-25** (all steps pass; models measured).
-   **M9 — Architecture** — **done 2026-10-25**, approved by the user (`docs/architecture.md` §11–22).
-8. **M9 — Architecture update.** Platform layer, macOS backend interfaces (clipboard, keys, notify
-   incl. the Hammerspoon URL channel, focused app, Secure Input hint), Hammerspoon Lua interface,
-   installer split; updated `docs/architecture.md`; user approves.
-9. **M10 — macOS desktop backends.** The M9 interfaces on macOS, with fake-based tests. Check: unit
-   tests pass on Linux and on the CI macOS runner.
-10. **M11 — macOS install + docs.** `install.sh` on macOS (uv tool, Hammerspoon Lua + `require`,
-    Settings panes, `--uninstall`), README macOS section incl. permissions and the optional
-    Karabiner rule, CI macOS job. Check: fresh install on the test Mac gives five working shortcuts.
-11. **M12 — Mac acceptance.** User checklist in Teams, a browser, VS Code, Notes and Terminal; cancel
-    on a long translate; clipboard-only fallback without Accessibility; Secure Input message.
+All done. Each line: what it delivered, then the result.
+
+7. **M8 — macOS spike** (Mac, interactive) — **done 2026-10-25.** Hotkeys, keystrokes, clipboard,
+   permissions and model speed measured on the real Mac; found the locale bug in Hammerspoon
+   children and the need for release bindings.
+8. **M9 — Architecture update** — **done 2026-10-25**, approved by the user. Platform layer and
+   macOS interfaces (`docs/architecture.md` §11–22); permission failure is an error, not a
+   clipboard-only fallback.
+9. **M10 — macOS desktop backends** — **done 2026-10-25.** pbcopy/pbpaste, osascript keystrokes,
+   Hammerspoon notifications, probes; fake-based tests.
+10. **M11 — macOS install + docs** — **done 2026-10-26** (1 fix round: bash 3.2 broke the Lua file).
+    `scripts/install-macos.sh`, `macos/llmtr.lua.in`, README macOS section, CI `test-macos`.
+    Follow-ups: **M11-fix1** (Linux installer tests forced to Linux on the macOS runner),
+    **M11-fix2** (empty arrays under `set -u` on bash < 4.4 wiped the GNOME keybinding list).
+11. **M12 — Mac acceptance** — **done 2026-10-26**: 12 PASS, 1 PARTIAL. Follow-ups: **M12-fix1**
+    (Accessibility message names "Device Control and Data Access" on macOS 27, uv_build range,
+    README) and **M12-fix2** (cancel shows one bubble after all; README wording).
+12. **M13 — Backends cleanup** — **done 2026-10-26.** `cli.py` gets its desktop and notifier from
+    `backends.py` on both platforms.
+
+Possible later work (not planned): macOS Services as an extra for native apps, more language pairs,
+a smaller translate model for the M1.
 
 ### Risks (macOS)
 
