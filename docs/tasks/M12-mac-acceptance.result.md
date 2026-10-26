@@ -141,6 +141,11 @@ user in A3.
 in M8 the user saw `~` turn into `£` (UK-style layout). Suggested wording: *"or the `` ` ``/`~` key and
 the key next to left Shift are swapped (e.g. `§` or `£` appears)"*.
 
+> **Correction (orchestrator, 2026-10-26, from M12-fix2):** traced on the Mac, "Cancelled." comes
+> from the **first** run with its own id and **replaces** "Translating…" in the same bubble; the
+> second press sends nothing. What looked like two bubbles was macOS animating the replacement.
+> The D3 explanation below and this note are therefore wrong; see `docs/tasks/M12-fix2.result.md`.
+
 Not a defect: "Cancelled." appears as a second bubble rather than replacing "Translating…", because
 the cancelling press is its own `llmtr` run with its own `LLMTR_RUN_ID`. If a single bubble is
 wanted, the orchestrator could make the second run withdraw the first run's id. That's an

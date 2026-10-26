@@ -19,6 +19,7 @@ reason, while still failing on a real host where that binary behaves differently
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -212,6 +213,38 @@ def test_install_sh_is_valid_bash() -> None:
         ["bash", "-n", str(INSTALL_SH)], capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stderr
+
+
+def _unguarded_empty_array_expansions(script: Path) -> list[str]:
+    """Expansions of arrays declared empty (`name=()`) not written as ${name[@]+"${name[@]}"}.
+
+    Under `set -u`, bash < 4.4 (macOS ships 3.2) treats "${name[@]}" of an empty array as an
+    unbound variable; inside "$(...)" only the subshell dies, so the script carries on with a
+    wrong value (M11-fix2). A static check, so it holds whatever bash the runner has.
+    """
+    text = script.read_text()
+    names = set(re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)=\(\)", text))
+    problems = []
+    for name in sorted(names):
+        guarded = f'${{{name}[@]+"${{{name}[@]}}"}}'
+        rest = text.replace(guarded, "")
+        for match in re.finditer(rf"\$\{{{name}\[[@*]\]\}}", rest):
+            line = rest[: match.start()].count("\n") + 1
+            problems.append(f"{script.name}: {match.group(0)} (near line {line})")
+    return problems
+
+
+@pytest.mark.parametrize("script", [INSTALL_SH, REPO_ROOT / "scripts" / "install-macos.sh"])
+def test_possibly_empty_arrays_are_expanded_bash32_safe(script: Path) -> None:
+    assert _unguarded_empty_array_expansions(script) == []
+
+
+def test_empty_array_check_catches_unguarded_expansion(tmp_path: Path) -> None:
+    script = tmp_path / "bad.sh"
+    script.write_text(
+        'local -a others=() llmtr=()\nx="$(f "${others[@]}")"\nfor p in ${llmtr[@]+"${llmtr[@]}"}\n'
+    )
+    assert _unguarded_empty_array_expansions(script) == ["bad.sh: ${others[@]} (near line 2)"]
 
 
 # --- --dry-run: never touches gsettings/uv for real -------------------------------------------

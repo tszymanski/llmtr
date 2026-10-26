@@ -27,8 +27,8 @@ One row per task. Times in local time (Europe/Warsaw).
 | M13-backends-cleanup | Desktop worker (claude in sbx) | sbx llmtr-m13 | 2026-10-26 15:20 | ~15:35 | 0 (orchestrator review PASS) | merged | reruns: none; cli.py uses backends.py on both platforms (one place, arch 12), v1 tests patch llmtr.backends; 55 cli tests kept; 471 passed also with LLMTR_UNAME=Darwin |
 | M11-fix1 | Integration worker (claude in sbx) | sbx llmtr-m11-fix1 | 2026-10-26 13:00 | ~13:05 | 0 (orchestrator review PASS) | merged | reruns: none; Linux installer tests set LLMTR_UNAME=Linux (+1 test); host: 471 passed, LLMTR_UNAME=Darwin install tests 44 passed |
 | M12-fix1 | Integration worker (claude in sbx) | sbx llmtr-m12-fix1 | 2026-10-26 15:20 | ~15:30 | 0 (orchestrator review PASS) | merged | reruns: none; D1 message names Device Control and Data Access, D2 uv_build <0.14, D3-D5 README |
-| M12-fix2 | Mac fix worker (Claude Code on the user's Mac, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | – | – | – | scheduled | cancel shows two bubbles (Translating… + Cancelled.); diagnose on the Mac, fix Lua/cli/notify; may change code |
-| M11-fix2 | Integration worker (claude in sbx) | sbx llmtr-m11-fix2 | 2026-10-26 | – | – | running | CI test-macos: empty array under set -u on bash 3.2 makes install.sh write an empty keybinding list (confirmed in docker bash:3.2) |
+| M12-fix2 | Mac fix worker (Claude Code on the user's Mac, Opus 5.5, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | 2026-10-26 | 2026-10-26 | 0 (orchestrator review PASS) | merged | no code defect: trace shows Cancelled. replaces Translating… (same id, first run); M12 misread macOS banner replacement; README wording + Focus-mode troubleshooting; 3/3 cancel, normal, error one bubble each; reruns: none |
+| M11-fix2 | Integration worker (claude in sbx) | sbx llmtr-m11-fix2 | 2026-10-26 22:35 | ~22:42 | 0 (orchestrator review PASS) | merged | reruns: none; 3 array expansions guarded with ${a[@]+"${a[@]}"}, static regression test for both installers; host: old install.sh under docker bash:3.2 -> 2 unbound errors + empty keybinding list, fixed -> 0 errors, llmtr paths kept |
 
 ## Lessons
 
@@ -76,3 +76,9 @@ idempotent `install.sh`.
 - A platform dispatch keyed on `uname` changes what **existing** tests do on another OS. When adding
   one, run the suite with the other value forced (`LLMTR_UNAME=Darwin`) before merging; the first
   real macOS CI run caught 14 failures the Linux runs could not.
+- Scripts with `set -u` that must run on bash 3.2 (macOS) or < 4.4: expand possibly-empty arrays
+  as `${a[@]+"${a[@]}"}`. An error inside `"$(...)"` kills only the subshell, so the script exits
+  0 with a wrong value. `BASH_COMPAT` does **not** reproduce this; use Docker `bash:3.2`.
+- Acceptance reports must separate **observation** from **explanation**: M12 guessed a cause
+  ("Cancelled. comes from the second run") without a trace, and it nearly became a code change.
+  Before fixing a UI symptom, capture a trace of which process sent what.

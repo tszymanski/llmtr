@@ -129,7 +129,7 @@ clipboard there, because it would process stale clipboard text.
 
 By default `llmtr` shows its messages through Hammerspoon, as one bubble per run: "Translating…" stays
 while the job runs and disappears a few seconds after it ends. On success the pasted text is the
-result; errors and "Cancelled." get their own bubble. If no Hammerspoon
+result; an error or "Cancelled." replaces "Translating…" in the same bubble. If no Hammerspoon
 bubbles appear (Notifications not allowed, or you prefer not to), set in
 `~/.config/llmtr/config.toml`:
 
@@ -186,8 +186,9 @@ If the rule is enabled but Caps Lock keeps toggling (Karabiner gives no warning)
   `pbpaste` with `LC_CTYPE=UTF-8` because Hammerspoon's children have no locale.
 - **Shortcut does nothing** — check that Hammerspoon is running and reload its config; open
   *Console* in its menu and look for errors from `llmtr.lua`. Another app may own the same shortcut.
-- **No bubbles** — see macOS notifications above (Allow notifications, restart Hammerspoon, or use
-  `backend = "osascript"`).
+- **No bubbles** — first check that no Focus mode (Do Not Disturb, Sleep, …) is on: it hides
+  them while the shortcuts keep working. Otherwise see macOS notifications above (Allow
+  notifications, restart Hammerspoon, or use `backend = "osascript"`).
 - **Removing everything** — `./install.sh --uninstall`; then delete `~/.config/llmtr`,
   `~/.local/state/llmtr`, `~/.cache/llmtr` if you want those gone too.
 

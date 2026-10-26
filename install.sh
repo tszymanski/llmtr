@@ -89,13 +89,15 @@ other_keybinding_paths() {
     while IFS= read -r p; do
         [[ -z "$p" ]] && continue
         local skip=false
-        for lp in "${llmtr[@]}"; do
+        for lp in ${llmtr[@]+"${llmtr[@]}"}; do
             [[ "$p" == "$lp" ]] && skip=true && break
         done
         "$skip" || printf '%s\n' "$p"
     done < <(current_keybinding_paths)
 }
 
+# Arrays that can be empty are expanded as ${arr[@]+"${arr[@]}"}: under `set -u`, bash < 4.4
+# (macOS ships 3.2) treats "${arr[@]}" of an empty array as an unbound variable.
 array_literal() {
     if [[ $# -eq 0 ]]; then
         printf '[]'
@@ -188,7 +190,7 @@ register_shortcuts() {
     while IFS= read -r p; do llmtr+=("$p"); done < <(llmtr_paths)
 
     run gsettings set "$MEDIA_KEYS_SCHEMA" custom-keybindings \
-        "$(array_literal "${others[@]}" "${llmtr[@]}")"
+        "$(array_literal ${others[@]+"${others[@]}"} ${llmtr[@]+"${llmtr[@]}"})"
 
     for i in "${!SLOTS[@]}"; do
         local path="${llmtr[$i]}"
@@ -203,7 +205,8 @@ uninstall_shortcuts() {
     echo "==> Removing llmtr's GNOME shortcuts"
     local -a others=()
     while IFS= read -r p; do [[ -n "$p" ]] && others+=("$p"); done < <(other_keybinding_paths)
-    run gsettings set "$MEDIA_KEYS_SCHEMA" custom-keybindings "$(array_literal "${others[@]}")"
+    run gsettings set "$MEDIA_KEYS_SCHEMA" custom-keybindings \
+        "$(array_literal ${others[@]+"${others[@]}"})"
     while IFS= read -r path; do
         run gsettings reset-recursively "${MEDIA_KEYS_SCHEMA}.custom-keybinding:${path}"
     done < <(llmtr_paths)
