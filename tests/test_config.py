@@ -396,8 +396,8 @@ def test_notify_backend_invalid_value_is_config_error() -> None:
     with pytest.raises(ConfigError) as info:
         config.parse_config({"notify": {"backend": "growl"}}, source="/x/config.toml")
     assert str(info.value) == (
-        "Config error in /x/config.toml: 'notify.backend' must be one of auto, hammerspoon, "
-        "osascript"
+        "Config error: 'notify.backend' must be one of auto, hammerspoon, osascript "
+        "(in /x/config.toml)"
     )
 
 
@@ -496,3 +496,36 @@ def test_config_without_cursor_parses_as_before() -> None:
         notify=config.NotifyConfig(enabled=False),
     )
     assert cfg == expected
+
+
+# --- misplaced engine (M16-fix1 D2) -----------------------------------------------------------
+
+
+@pytest.mark.parametrize("table", ["notify", "cursor"])
+def test_engine_inside_a_table_is_config_error(table) -> None:
+    data = {table: {"engine": "cursor"}}
+    with pytest.raises(ConfigError) as info:
+        config.parse_config(data, env={})
+    assert f"found as {table}.engine" in str(info.value)
+    assert str(info.value).startswith("Config error: put 'engine' on the first line")
+
+
+def test_config_error_shows_home_as_tilde(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    path = tmp_path / ".config" / "llmtr" / "config.toml"
+    err = ConfigError(path, "bad value")
+    assert str(err) == "Config error: bad value (in ~/.config/llmtr/config.toml)"
+    assert err.path == path
+    assert err.problem == "bad value"
+
+
+def test_config_error_outside_home_shows_full_path(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    err = ConfigError("/x/config.toml", "bad value")
+    assert str(err) == "Config error: bad value (in /x/config.toml)"
+    assert err.path == Path("/x/config.toml")
+
+
+def test_top_level_engine_with_notify_table_parses() -> None:
+    cfg = config.parse_config({"engine": "cursor", "notify": {"backend": "auto"}}, env={})
+    assert cfg.engine == "cursor"

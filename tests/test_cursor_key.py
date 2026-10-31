@@ -145,3 +145,40 @@ def test_key_not_in_transport_repr_errors_or_log(tmp_path, caplog) -> None:
     assert SECRET not in caplog.text
     log_file = log.log_path(env)
     assert not log_file.exists() or SECRET not in log_file.read_text(encoding="utf-8")
+
+
+# --- display_path / ~ in messages (M16-fix1 D1) -----------------------------------------------
+
+
+def test_display_path_collapses_home(tmp_path) -> None:
+    from llmtr.errors import display_path
+
+    assert display_path(tmp_path / ".config" / "k", home=tmp_path) == "~/.config/k"
+    assert display_path("/elsewhere/k", home=tmp_path) == "/elsewhere/k"
+
+
+def test_key_messages_use_tilde_under_home(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    path = tmp_path / ".config" / "llmtr" / "cursor-api-key"
+    missing = CursorKeyMissing(path)
+    assert missing.user_message == (
+        "No Cursor API key. Put it in ~/.config/llmtr/cursor-api-key (mode 600)."
+    )
+    assert missing.path == path and missing.path.is_absolute()
+    on_mac = CursorKeyMissing(path, keychain=True)
+    assert on_mac.user_message.endswith("(mode 600) or in the Keychain as llmtr-cursor.")
+    assert "~/.config" in on_mac.user_message and str(tmp_path) not in on_mac.user_message
+    insecure = CursorKeyInsecure(path)
+    assert insecure.user_message == (
+        "Cursor API key file is readable by others. Run: chmod 600 ~/.config/llmtr/cursor-api-key"
+    )
+    assert insecure.path == path
+
+
+def test_key_messages_show_path_outside_home_in_full(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    other = tmp_path / "xdg" / "llmtr" / "cursor-api-key"
+    assert f"Put it in {other} (mode 600)" in CursorKeyMissing(other).user_message
+    assert CursorKeyInsecure(other).user_message.endswith(f"chmod 600 {other}")

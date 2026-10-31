@@ -373,7 +373,8 @@ def parse_config(
     when the user did not set them (macOS: ``cmd+c``/``cmd+v``/``0``); a value in the file
     always wins. ``notify.backend`` must be ``auto``, ``hammerspoon`` or ``osascript``.
 
-    Missing keys take dataclass defaults; unknown keys are ignored. A non-empty ``OLLAMA_HOST``
+    Missing keys take dataclass defaults; unknown keys are ignored
+    (except a misplaced ``engine`` inside a table, which is an error). A non-empty ``OLLAMA_HOST``
     in ``env`` overrides ``[ollama] url``; the final URL goes through ``normalize_ollama_url``.
     ``[[tone.preset]]`` entries are appended after the built-in ``team`` preset, and an entry
     named ``team`` replaces the built-in one in place.
@@ -386,6 +387,12 @@ def parse_config(
     env = env if env is not None else os.environ
     if not isinstance(data, Mapping):
         raise ConfigError(source, "top-level config must be a table")
+    for name, value in data.items():
+        if isinstance(value, Mapping) and "engine" in value:
+            raise ConfigError(
+                source,
+                f"put 'engine' on the first line, above any [section] (found as {name}.engine)",
+            )
 
     ollama_table = _require_table(data, "ollama", source)
     url = _as_str(ollama_table, "url", DEFAULT_OLLAMA_URL, "ollama.url", source)

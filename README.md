@@ -39,8 +39,8 @@ ones, run through Hammerspoon; see [macOS](#macos).
 - `wl-clipboard` (`wl-copy`/`wl-paste`) or `xclip`, and `notify-send` (usually part of
   `libnotify-bin`).
 - `ydotool` ≥ 1.0 with the `ydotoold` user service, for automatic copy/paste keystrokes. Without
-  it, llmtr still works in clipboard-only mode (you copy by hand, trigger the shortcut, then
-  paste by hand).
+  it, llmtr still works in clipboard-only mode (press Ctrl+C first, then the shortcut, then
+  Ctrl+V; the shortcut uses whatever is on the clipboard).
 
 ## Install
 
@@ -213,7 +213,8 @@ setups where Cursor is the only allowed AI tool. Ollama stays the default.
 Cursor's cloud and runs in a cloud agent, and Cursor stores it (storage mode is required). llmtr
 deletes the agent after each call, but Cursor's own retention rules apply. Don't use this engine
 for text you may not send to Cursor. Usage counts against your Cursor plan (each call carries
-about 16k cached tokens of agent context).
+about 16k cached tokens of agent context). Without ydotool, the shortcut sends the current
+clipboard to Cursor, so copy the text you want first.
 
 **Requirements.** A Cursor plan with Cloud Agents. In Cursor Settings → Privacy, choose
 **"Privacy Mode"**; "Privacy Mode (Legacy)" blocks API agents.
@@ -222,6 +223,7 @@ about 16k cached tokens of agent context).
 only you can read and paste the key into it with an editor:
 
 ```bash
+mkdir -p ~/.config/llmtr
 install -m 600 /dev/null ~/.config/llmtr/cursor-api-key
 ```
 
@@ -235,9 +237,13 @@ your shell history:
 security add-generic-password -s llmtr-cursor -a "$USER" -w
 ```
 
+To replace the key later, add `-U`: `security add-generic-password -U -s llmtr-cursor -a
+"$USER" -w`. To remove it: `security delete-generic-password -s llmtr-cursor`.
+
 The key file above also works on macOS.
 
-**Config.**
+**Config.** `engine` is a top-level key: put it on the first line of `config.toml`, above any
+`[section]` (llmtr reports an error otherwise).
 
 ```toml
 engine = "cursor"
@@ -262,6 +268,7 @@ limit). Agents are deleted in the background, a few seconds to a minute after th
 | --- | --- |
 | `No Cursor API key. Put it in … (mode 600).` | Create the key file (or the Keychain item on macOS) as above. |
 | `Cursor API key file is readable by others. Run: chmod 600 …` | Run the `chmod` shown. |
+| `put 'engine' on the first line, above any [section] (found as notify.engine)` | Move `engine = "cursor"` to the first line of `config.toml`, above every `[section]`. |
 | `Cursor rejected the API key. …` | The key is wrong or revoked: create a new one in Cursor Dashboard → API Keys. |
 | `Cursor agents need storage: set Cursor Privacy to "Privacy Mode" (not Legacy).` | Change Cursor Settings → Privacy to "Privacy Mode". |
 | `Cursor model … is not available. Check cursor.model in config.toml.` | Use a model your plan has, or `model = "auto"`. |
@@ -324,7 +331,9 @@ llmtr translate --model translategemma:27b --stdin < long_text.txt
   `$XDG_RUNTIME_DIR/.ydotool_socket` exists; re-run `./scripts/install-ydotool.sh` if needed.
 - **Nothing happens, or the result stays on the clipboard with a "Press Ctrl+V" notification** —
   `ydotool` isn't installed or the socket isn't set up; this is the expected clipboard-only
-  fallback, not an error. Paste manually, or install ydotool for the automatic flow.
+  fallback, not an error. Press Ctrl+C first, then the shortcut, then paste manually with
+  Ctrl+V (the shortcut uses whatever is on the clipboard), or install ydotool for the automatic
+  flow.
 - **"Can't reach Ollama at .../is it running?"** — start Ollama (`ollama serve`, or check your
   install's service) and confirm the URL in your config / `OLLAMA_HOST` matches where it's
   listening.
@@ -346,3 +355,7 @@ Removes llmtr's five GNOME shortcuts and the `uv tool`-installed CLI. Your confi
 cache files, and any ydotool installation, are left alone — remove
 `~/.config/llmtr`/`~/.local/state/llmtr`/`~/.cache/llmtr` and run `./scripts/install-ydotool.sh`'s
 undo steps manually if you want those gone too.
+
+The Cursor API key is not removed: delete `~/.config/llmtr/cursor-api-key` or the Keychain item
+(`security delete-generic-password -s llmtr-cursor`), and revoke the key in Cursor Dashboard →
+API Keys.

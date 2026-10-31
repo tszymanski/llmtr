@@ -17,7 +17,7 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from llmtr import backends, cursor_key, log
+from llmtr import backends, cursor_client, cursor_key, log
 from llmtr.backends import Desktop
 from llmtr.clipboard import Clipboard
 from llmtr.config import (
@@ -54,7 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="llmtr",
         description="Translate (PL<->EN), fix grammar, or rewrite the tone of the selected "
-        "text with a local Ollama model, then paste the result over the selection.",
+        "text with a local Ollama model or a Cursor cloud agent (--engine cursor), then paste "
+        "the result over the selection.",
     )
     parser.add_argument("--config", metavar="PATH", help="config file (default: XDG config)")
     sub = parser.add_subparsers(dest="mode", required=True, metavar="MODE")
@@ -213,12 +214,12 @@ def make_chat_client(config: Config, engine: str, platform: Platform) -> ChatCli
 
 
 def _run_line(record: log.RunRecord, engine: str, client: ChatClient | None) -> str:
-    """The run log line: ``RunRecord`` plus ``engine=`` and, for Cursor, the agent id's first
-    6 characters (never the whole id, the key or any text)."""
+    """The run log line: ``RunRecord`` plus ``engine=`` and, for Cursor, the agent id's short
+    form (never the whole id, the key or any text)."""
     line = f"{record} engine={engine}"
     agent_id = getattr(client, "last_agent_id", None) if client is not None else None
     if isinstance(agent_id, str) and agent_id:
-        line += f" agent={agent_id[:6]}"
+        line += f" agent={cursor_client._short(agent_id)}"
     return line
 
 

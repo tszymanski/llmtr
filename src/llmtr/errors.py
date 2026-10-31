@@ -25,7 +25,7 @@ class ConfigError(LlmtrError):
     """``config.toml`` or ``state.toml`` cannot be parsed or has an invalid value."""
 
     def __init__(self, path: Path | str, problem: str) -> None:
-        super().__init__(f"Config error in {path}: {problem}")
+        super().__init__(f"Config error: {problem} (in {display_path(path)})")
         self.path = Path(path)
         self.problem = problem
 
@@ -162,11 +162,21 @@ class CursorError(LlmtrError):
         super().__init__(user_message, detail)
 
 
+def display_path(path: Path | str, home: Path | None = None) -> str:
+    """``~/<rest>`` when ``path`` is under ``home`` (default: the user's home), else unchanged."""
+    p = Path(path)
+    try:
+        rest = p.relative_to(home if home is not None else Path.home())
+    except (ValueError, RuntimeError):
+        return str(path)
+    return str(path) if str(rest) == "." else f"~/{rest}"
+
+
 class CursorKeyMissing(CursorError):
     """No Cursor API key in ``CURSOR_API_KEY``, the macOS Keychain or the key file."""
 
     def __init__(self, path: Path | str, keychain: bool = False) -> None:
-        where = f"{path} (mode 600)"
+        where = f"{display_path(path)} (mode 600)"
         if keychain:
             where += " or in the Keychain as llmtr-cursor"
         super().__init__(f"No Cursor API key. Put it in {where}.")
@@ -177,7 +187,9 @@ class CursorKeyInsecure(CursorError):
     """The key file has group or other permission bits; it is not read."""
 
     def __init__(self, path: Path | str) -> None:
-        super().__init__(f"Cursor API key file is readable by others. Run: chmod 600 {path}")
+        super().__init__(
+            f"Cursor API key file is readable by others. Run: chmod 600 {display_path(path)}"
+        )
         self.path = Path(path)
 
 

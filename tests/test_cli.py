@@ -41,6 +41,7 @@ from llmtr.errors import (
     ModelMissing,
     OllamaTimeout,
     OllamaUnavailable,
+    display_path,
 )
 from llmtr.fakes import (
     FakeChatClient,
@@ -1065,8 +1066,21 @@ def test_main_macos_bad_notify_backend_notifies_with_config_error(monkeypatch, t
     assert cli.main(["--config", str(path), "fix"]) == cli.EXIT_ERROR
 
     assert notifier.shown[0].summary == (
-        f"Config error in {path}: 'notify.backend' must be one of auto, hammerspoon, osascript"
+        "Config error: 'notify.backend' must be one of auto, hammerspoon, osascript "
+        f"(in {display_path(path)})"
     )
+    assert notifier.shown[0].urgency == "critical"
+
+
+def test_main_misplaced_engine_notifies_fix_first(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('[notify]\nbackend = "auto"\nengine = "cursor"\n', encoding="utf-8")
+    notifier = FakeNotifier()
+    monkeypatch.setattr(backends, "NotifySendNotifier", lambda: notifier)
+
+    assert cli.main(["--config", str(path), "fix"]) == cli.EXIT_ERROR
+
+    assert notifier.shown[0].summary.startswith("Config error: put 'engine'")
     assert notifier.shown[0].urgency == "critical"
 
 
@@ -1185,9 +1199,7 @@ def test_run_shortcut_cursor_engine_pastes_and_calls_cleanup(monkeypatch, tmp_pa
     ]
     log_text = _log_file(tmp_path).read_text(encoding="utf-8")
     assert "engine=cursor" in log_text
-    assert f"agent={CURSOR_AGENT[:6]} " in log_text or log_text.rstrip().endswith(
-        f"agent={CURSOR_AGENT[:6]}"
-    )
+    assert "agent=7a1f00 " in log_text or log_text.rstrip().endswith("agent=7a1f00")
     assert CURSOR_AGENT not in log_text
     assert CURSOR_SECRET not in log_text
     assert "Cześć" not in log_text and "Hello, how" not in log_text
@@ -1309,3 +1321,7 @@ def test_main_cursor_cleanup_without_key_exits_zero_silently(monkeypatch, tmp_pa
 
     assert cli.main(["cursor-cleanup", "a1"]) == cli.EXIT_OK
     assert "CursorKeyMissing" in _log_file(tmp_path).read_text(encoding="utf-8")
+
+
+def test_parser_description_mentions_cursor() -> None:
+    assert "Cursor" in cli.build_parser().description

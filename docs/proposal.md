@@ -313,7 +313,7 @@ a smaller translate model for the M1.
 
 ## Cursor engine (v3, spike)
 
-Opened by the user 2026-10-28. Status: **M14 spike done 2026-10-31 (verdict: go, as an opt-in engine); M15 merged 2026-10-31; Linux hotkey and Mac checks pending.**
+Opened by the user 2026-10-28. Status: **M14 spike done 2026-10-31 (verdict: go, as an opt-in engine); M15 merged 2026-10-31; M16 Mac acceptance passed 2026-10-31 (D1–D3 fixed in M16-fix1); M17 Linux acceptance passed 2026-10-31 (ready with minor fixes D4–D6).**
 
 ### Goal
 
@@ -343,11 +343,21 @@ engine, so the README must say so.
     stream, delete in a detached child after the paste, hourly sweep of leftover `llmtr-` agents;
     key from `CURSOR_API_KEY`, the macOS Keychain (`llmtr-cursor`) or a `0600` file; README privacy
     note (user decisions 2026-10-31). **Merged 2026-10-31:** 601 tests; real-API test and a CLI
-    translate pass on the host, agents deleted in the background ~30 s later. Pending: Linux hotkey
-. **M16 — Mac acceptance of the Cursor engine** (Mac, interactive) — contract
+    translate pass on the host, agents deleted in the background ~30 s later. Linux hotkey check: M17.
+15. **M16 — Mac acceptance of the Cursor engine** (Mac, interactive) — contract
     `docs/tasks/M16-mac-cursor.md`. Keychain lookup from a Hammerspoon child (PATH, Keychain
     dialog), the detached cleanup child, notifications, cancel, error messages, Ollama unaffected,
-    README steps.
+    README steps. **Done 2026-10-31:** 9 PASS, 2 PARTIAL, verdict ready with minor fixes (D1 absolute
+    path in the key-missing message, D2 `engine` under a `[section]` silently ignored, D3 README
+    lacks Keychain replace/remove).
+    Follow-up: **M16-fix1** (D1–D3, short ids, help text; sbx).
+16. **M17 — Linux acceptance of the Cursor engine** (host, interactive) — contract
+    `docs/tasks/M17-linux-cursor.md`; mirrors M16 on GNOME/Wayland after M16-fix1 is merged.
+    **Done 2026-10-31:** 9 PASS, 2 PARTIAL, verdict ready with minor fixes. Key file read from
+    a GNOME shortcut, 12/12 agents deleted by the detached child, cancel 0.79 s, runs 6.1–8.5 s.
+    Findings: D4 `ConfigError` shows the absolute home path and the bubble hides the fix, D5
+    README needs `mkdir -p ~/.config/llmtr` before the key-file `install`, D6 README should say
+    the clipboard-only shortcut sends the current clipboard. Fixed in **M17-fix1** (sbx), merged 2026-10-31.
 
 ### Risks (Cursor)
 

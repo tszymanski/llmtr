@@ -67,8 +67,14 @@ _log = logging.getLogger("llmtr")
 
 
 def _short(ident: str | None) -> str:
-    """First 6 characters of an agent/run id: enough to correlate, never the whole id."""
-    return (ident or "")[:6]
+    """6 characters of an agent/run id after its ``bc-``/``run-`` prefix: enough to correlate,
+    never the whole id."""
+    text = ident or ""
+    for prefix in ("bc-", "run-"):
+        if text.startswith(prefix):
+            text = text[len(prefix) :]
+            break
+    return text[:6]
 
 
 # --- transport ---------------------------------------------------------------------------------

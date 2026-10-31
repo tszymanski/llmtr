@@ -743,3 +743,12 @@ def test_translate_pl_sentence_with_real_cursor_api() -> None:
     result = run_job(job, client, config)
     assert result.strip()
     assert langdetect.detect_language(result) == "en"
+
+
+def test_short_strips_prefix_and_takes_six() -> None:
+    from llmtr.cursor_client import _short
+
+    assert _short("bc-9ee1a2b3c4") == "9ee1a2"
+    assert _short("run-20ab34cd") == "20ab34"
+    assert _short("xyz") == "xyz"
+    assert _short(None) == ""

@@ -44,7 +44,7 @@ implemented by that worker. Full signatures and docstrings are in the stubs; sum
 | Class | Raised when | `user_message` |
 | --- | --- | --- |
 | `LlmtrError(user_message, detail="")` | base | — |
-| `ConfigError(path, problem)` | bad TOML / bad value | `Config error in {path}: {problem}` |
+| `ConfigError(path, problem)` | bad TOML / bad value | `Config error: {problem} (in {path})` (`path` via `display_path`: `~/…` under home) |
 | `OllamaUnavailable(url, detail="")` | cannot connect | `Can't reach Ollama at {url}. Is it running?` |
 | `ModelMissing(model)` | HTTP 404 "model … not found" | `Model {m} is not installed. Run: ollama pull {m}` |
 | `OllamaTimeout(timeout)` | request > `ollama.timeout` | `Ollama did not answer within {t} s. Try again.` |
@@ -426,7 +426,7 @@ out, otherwise → Polish". Polish typed without diacritics is still caught by s
 | Text too long | `plan_job` | `Selection too long (9000 characters, limit 8000).` | critical | restored |
 | Model output empty | `run_job` | `The model returned no text.` | critical | restored |
 | No clipboard tool | `make_clipboard` | `No working clipboard tool. Install wl-clipboard.` | critical | — |
-| Bad config | `load_config` | `Config error in …/config.toml: …` (incl. an Ollama URL that is not `http`/`https`) | critical | — |
+| Bad config | `load_config` | `Config error: … (in ~/.config/llmtr/config.toml)` (incl. an Ollama URL that is not `http`/`https`) | critical | — |
 | Second press | `RunLock.acquire` false | (first process) `Cancelled.` | normal | restored |
 
 `detail` (exception text) goes to stderr only, which GNOME sends to the journal.
@@ -783,7 +783,7 @@ surprise. The user gets the exact fix instead. Clipboard-only still applies to a
 | Nothing copied, no Secure Input | `capture_selection` | `No text selected. Select some text first.` | critical | restored |
 | Paste fails | `deliver_result` | `Result copied. Press ⌘V to paste.` | normal | holds result |
 | pbcopy/pbpaste fail | `PbClipboard` | `No working clipboard tool.` (M10 wording, 21) | critical | — |
-| Bad `notify.backend` | `parse_config` | `Config error in …/config.toml: 'notify.backend' must be one of auto, hammerspoon, osascript` | critical | — |
+| Bad `notify.backend` | `parse_config` | `Config error: 'notify.backend' must be one of auto, hammerspoon, osascript (in ~/.config/llmtr/config.toml)` | critical | — |
 | Second press | `RunLock.acquire` false | `Cancelled.` | normal | restored |
 
 Ollama, model, timeout, length and config errors are the same as in section 7.
@@ -938,7 +938,7 @@ Cancel (second press → SIGTERM → Cancelled raised in the stream read):
   Cancelled during the create: no agent id yet, so no cancel and no cleanup (the sweep catches it).
 ```
 
-The run log line gains `engine=<name>` and, for Cursor, `agent=<first 6 chars>`; never the text,
+The run log line gains `engine=<name>` and, for Cursor, `agent=<6 chars after the bc- prefix>`; never the text,
 the key or the whole id. One call is 3 requests (create, stream, delete), so ≤ 6 calls a minute
 under the 20 rpm limit.
 
