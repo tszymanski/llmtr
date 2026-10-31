@@ -22,6 +22,9 @@ files are not translated, saved or restored — confirmed by the user 2026-10-04
 
 **2026-10-22:** macOS is now in scope as v2 — see [macOS support (v2)](#macos-support-v2).
 
+**2026-10-29:** a Cursor Cloud Agents engine is being evaluated (spike only) — see
+[Cursor engine (v3, spike)](#cursor-engine-v3-spike).
+
 ## User flow
 
 1. Select text in any app.
@@ -307,6 +310,45 @@ a smaller translate model for the M1.
 - **Locale/PATH in Hammerspoon children:** absolute tool paths and `LC_CTYPE=UTF-8` (M8 bug).
 - **Existing Hammerspoon config:** the installer only adds one `require` line and its own file.
 - **macOS updates:** M8 ran on 27.0.1; Settings names already differ from older macOS.
+
+## Cursor engine (v3, spike)
+
+Opened by the user 2026-10-28. Status: **M14 spike done 2026-10-31 (verdict: go, as an opt-in engine); M15 not started.**
+
+### Goal
+
+Support a user who may use **only Cursor and the Cursor API**, with Ollama and other cloud LLMs
+forbidden. llmtr would send the selected text to the Cursor Cloud Agents REST API v1
+(`https://api.cursor.com/v1`) as a no-repo agent and paste the answer. Ollama stays the default
+engine. The selected text leaves the machine, which reverses the local-only premise for this
+engine, so the README must say so.
+
+### Decisions so far (user, 2026-10-29)
+
+| Topic | Decision |
+| --- | --- |
+| API | Cursor Cloud Agents REST API v1 at `https://api.cursor.com`. Rejected for now: Cursor CLI (`agent -p`), legacy v0 API. |
+| Order | Measure first (M14 spike), then design the engine from the findings (M15). |
+| API key | Never in `config.toml`, never in a sandbox. Storage method decided after M14. |
+
+### Milestones (v3)
+
+13. **M14 — Cursor spike** (host, interactive, user's API key) — **done 2026-10-31.** No-repo
+    agents work: fresh agent + stream gives 5.8–13.9 s per call (`gpt-5.4-nano` fastest), output
+    clean, no tool use. Needs Cursor "Privacy Mode" (storage on), not "Privacy Mode (Legacy)".
+    `DELETE` is slow (median 11.7 s), so cleanup must run after the paste. `sbx` blocks
+    `api.cursor.com`. Findings and the M15 recommendation: `docs/tasks/M14-cursor-spike.result.md`.
+14. **M15 — Cursor engine** — not planned yet; depends on M14.
+
+### Risks (Cursor)
+
+- **Latency:** every call may start a cloud agent; there are no published startup times.
+- **Agent with tools:** selected text could steer the agent (prompt injection). The prompt frames
+  the text as data; M14 tests it.
+- **Rate limit:** 20 requests per minute by default, and one call takes several requests.
+- **Leftovers and cost:** every call creates an agent that must be deleted, and usage is billed to
+  the user's Cursor plan.
+- **Privacy:** the text is sent to Cursor's cloud.
 
 ## Risks
 
