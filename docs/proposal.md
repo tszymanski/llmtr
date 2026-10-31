@@ -344,7 +344,10 @@ engine, so the README must say so.
     key from `CURSOR_API_KEY`, the macOS Keychain (`llmtr-cursor`) or a `0600` file; README privacy
     note (user decisions 2026-10-31). **Merged 2026-10-31:** 601 tests; real-API test and a CLI
     translate pass on the host, agents deleted in the background ~30 s later. Pending: Linux hotkey
-    check by the user, Mac check (Keychain from Hammerspoon).
+. **M16 — Mac acceptance of the Cursor engine** (Mac, interactive) — contract
+    `docs/tasks/M16-mac-cursor.md`. Keychain lookup from a Hammerspoon child (PATH, Keychain
+    dialog), the detached cleanup child, notifications, cancel, error messages, Ollama unaffected,
+    README steps.
 
 ### Risks (Cursor)
 
