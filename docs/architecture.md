@@ -321,6 +321,9 @@ All keys optional; a missing file means all defaults; unknown keys are ignored.
 | `[[tone.preset]]` `name`, `instruction` | strings | built-in `team` | appended after `team`; a preset named `team` replaces the built-in |
 | `notify.enabled` | bool | `true` | false hides progress notifications only |
 
+v3: the top-level `engine` key (`"ollama"` | `"cursor"`) and the `[cursor]` table are in
+[section 23](#23-cursor-engine-v3).
+
 Example:
 
 ```toml
@@ -427,6 +430,8 @@ out, otherwise → Polish". Polish typed without diacritics is still caught by s
 | Second press | `RunLock.acquire` false | (first process) `Cancelled.` | normal | restored |
 
 `detail` (exception text) goes to stderr only, which GNOME sends to the journal.
+
+v3: the Cursor engine's errors are in the [section 23 error table](#235-errors).
 
 ## 8. Testing strategy
 
@@ -861,3 +866,119 @@ The two lists meet only at two documented contracts: the URL protocol and `LLMTR
   at install time (section 18).
 - `hs.task` environment handling (merge vs replace) is checked in M11 on the Mac; the Python side
   does not depend on it.
+
+## 23. Cursor engine (v3)
+
+Opt-in engine (`engine = "cursor"`) for a user who may use only Cursor. Source of every API fact:
+`docs/tasks/M14-cursor-spike.result.md`. The selected text leaves the machine (README "Cursor
+engine (optional)"). With no `engine` key nothing changes: Ollama, its prompts and its tests are
+untouched.
+
+### 23.1 Modules
+
+| Module | Job |
+| --- | --- |
+| `config.py` | `CursorConfig` (`[cursor]`), `Config.engine`, `Config.cursor`, `ENGINES` |
+| `cursor_key.py` | `load_key(platform, env=None, *, run=subprocess.run)`, `key_path(env=None)` |
+| `cursor_client.py` | `CursorTransport` (protocol), `UrllibCursorTransport(key)` (the only Cursor network code), `CursorClient` (a `ChatClient`), `spawn_cleanup`, `delete_agents`, `sweep`, `parse_sse`, `map_error` |
+| `prompts.py` | `CURSOR_PROMPT_TEMPLATE`, `CURSOR_TASKS`, `build_cursor_messages(mode, text, *, source, target, tone)` |
+| `engine.py` | `plan_job(..., engine=None)`; `Job.engine`; `progress_text` body `"{model} (Cursor)"` |
+| `cli.py` | `--engine {ollama,cursor}`, `make_chat_client(config, engine, platform)`, `llmtr cursor-cleanup [AGENT_ID ...]` |
+| `errors.py` | the `Cursor*` classes of 23.5 (all subclass `CursorError`) |
+| `fakes.py` | `FakeCursorTransport` (scripted `(method, path)` responses and SSE lists, records calls) |
+
+### 23.2 Config
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `engine` (top level) | `"ollama"`\|`"cursor"` | `"ollama"` | anything else → `ConfigError`; `--engine` overrides it |
+| `cursor.model` | string | `"gpt-5.4-nano"` | `"auto"` → no `model` in the create request (account default); `--model` overrides it |
+| `cursor.timeout` | float, s, > 0 | `60.0` | create → final text, overall |
+| `cursor.request_timeout` | float, s, > 0 | `10.0` | create, get-run, list |
+| `cursor.cancel_timeout` | float, s, > 0 | `5.0` | the cancel `POST` |
+| `cursor.delete_timeout` | float, s, > 0 | `60.0` | one `DELETE` in the cleanup child |
+| `cursor.max_chars` | int, > 0 | `8000` | replaces `ollama.max_chars` for this engine |
+| `cursor.base_url` | string | `"https://api.cursor.com"` | `https` only; trailing `/` removed |
+
+`models.*`, `ollama.*` and `--quality` apply only to Ollama. The key is never in `config.toml`:
+`CURSOR_API_KEY` env → macOS Keychain (`security find-generic-password -s llmtr-cursor -w`, 5 s,
+exit ≠ 0 means "not there") → `$XDG_CONFIG_HOME/llmtr/cursor-api-key`, which is refused unread if
+`st_mode & 0o077`. The key is never in argv, a log line, an exception or a `repr`.
+
+### 23.3 Sequence
+
+```
+run_shortcut (cursor)
+  lock → capture → plan_job(engine="cursor"): one user message, cursor.model, cursor.max_chars
+  → notify("Translating PL → EN…", "gpt-5.4-nano (Cursor)")
+  → make_chat_client: cursor_key.load_key(platform)          # after the lock: a second press still cancels
+  → run_job → CursorClient.chat
+       POST /v1/agents {"prompt": {"text"}, "name": "llmtr-<8 hex>", "mode": "agent", "model"?: {"id"}}
+                                                              # request_timeout; no repos, no env
+       GET  /v1/agents/{id}/runs/{runId}/stream               # until `result`; deadline = cursor.timeout
+            `result` {"status", "text"} → FINISHED: text; other status → "Cursor agent failed."
+            `status`, `interaction_update`, unknown events ignored (C9: status FINISHED + result CANCELLED)
+            stream ends/breaks without `result` → one GET /v1/agents/{id}/runs/{runId}
+                FINISHED → `result` string; ERROR/EXPIRED/CANCELLED → agent failed;
+                not terminal → CursorTimeout if past the deadline, else CursorError
+       finally (agent exists): spawn_cleanup(agent_id)        # detached, never waited for
+  → strip_preamble → save_last_result → paste → restore clipboard
+
+spawn_cleanup: Popen([sys.executable, "-m", "llmtr", "cursor-cleanup", id],
+                     start_new_session=True, stdin/stdout/stderr=DEVNULL, close_fds=True)
+llmtr cursor-cleanup [ID ...]   (child; loads config and key itself, never notifies, exit 0)
+  DELETE /v1/agents/{id} for each id (delete_timeout), failures logged
+  sweep: skip if $XDG_CACHE_HOME/llmtr/cursor-sweep is < 3600 s old; else write it,
+         GET /v1/agents?includeArchived=true&limit=100, DELETE agents named `llmtr-…`,
+         not ACTIVE, and older than 10 min when `createdAt` is present; max 10 DELETEs
+
+Cancel (second press → SIGTERM → Cancelled raised in the stream read):
+  POST /v1/agents/{id}/runs/{runId}/cancel (cancel_timeout, every error ignored, incl. 409
+  run_not_cancellable) → spawn_cleanup → re-raise Cancelled → "Cancelled.", clipboard restored
+  Cancelled during the create: no agent id yet, so no cancel and no cleanup (the sweep catches it).
+```
+
+The run log line gains `engine=<name>` and, for Cursor, `agent=<first 6 chars>`; never the text,
+the key or the whole id. One call is 3 requests (create, stream, delete), so ≤ 6 calls a minute
+under the 20 rpm limit.
+
+### 23.4 Prompt
+
+`CURSOR_PROMPT_TEMPLATE` is the M14 contract prompt word for word (line breaks included), with
+`{task}` and `{text}` (stripped). Task lines: translate *"Task: translate the text from {src} to
+{dst}. Translate every line; keep lines that are already in {dst} unchanged."* (C8 fix), fix as in
+M14, tone *"Task: rewrite the text in this tone: {instruction} Keep its language and meaning."*;
+each followed by the "Reply with … only" line. The translategemma template and the Ollama
+fix/tone prompts are unchanged.
+
+### 23.5 Errors
+
+All through `notify`, urgency critical, clipboard restored (like section 7).
+
+| Situation | Class | Notification |
+| --- | --- | --- |
+| No key anywhere | `CursorKeyMissing(path)` | `No Cursor API key. Put it in ~/.config/llmtr/cursor-api-key (mode 600).` (macOS: `… (mode 600) or in the Keychain as llmtr-cursor.`) |
+| Key file group/other-readable | `CursorKeyInsecure(path)` | `Cursor API key file is readable by others. Run: chmod 600 …/cursor-api-key` |
+| 401 | `CursorAuthError` | `Cursor rejected the API key. Create a new one in Cursor Dashboard → API Keys.` |
+| 403 `feature_unavailable` | `CursorStorageDisabled` | `Cursor agents need storage: set Cursor Privacy to "Privacy Mode" (not Legacy).` |
+| 400 `invalid_model` | `CursorModelInvalid(model)` | `Cursor model {m} is not available. Check cursor.model in config.toml.` |
+| 429 | `CursorRateLimited(retry_after)` | `Cursor rate limit reached. Try again in {n} s.` / `… Try again in a minute.` |
+| Connection error, 5xx | `CursorUnavailable` | `Can't reach the Cursor API. Check your connection.` |
+| No final text in time (or a request timed out) | `CursorTimeout(t)` | `Cursor did not answer within {t} s. Try again.` |
+| Other 4xx, bad JSON | `CursorError` | `Cursor refused the request.` |
+| Run `ERROR`/`EXPIRED`/`CANCELLED` | `CursorError` | `Cursor agent failed.` |
+| Empty text after `strip_preamble` | `OllamaError` (unchanged path in `run_job`) | `The model returned no text.` |
+| Cancel `409 run_not_cancellable` | — | not shown |
+
+### 23.6 Testing
+
+- No test reaches `api.cursor.com` (the `sbx` policy blocks it, and no key goes into a sandbox).
+  `CursorClient`, `delete_agents` and `sweep` run against `FakeCursorTransport`; deadlines use an
+  injected `monotonic`; `spawn_cleanup` is a recording callable, or `subprocess.Popen` is patched.
+- `UrllibCursorTransport` runs against a local `http.server` thread on `127.0.0.1`: JSON
+  round trip with the Bearer header, an SSE stream split across reads (multi-line `data:`,
+  comments, blank-line terminator), a 4xx with `Retry-After`, read timeouts, connection refused.
+- `cursor_key` uses `FakeRunner` for the Keychain and `tmp_path` files with real modes.
+- `cli` tests patch `cli.UrllibCursorTransport`/`cli.CursorClient` and set `CURSOR_API_KEY`.
+- One real-API test, `@pytest.mark.cursor`, skipped unless `LLMTR_CURSOR_TESTS=1`; the
+  orchestrator runs it on the host: `LLMTR_CURSOR_TESTS=1 uv run pytest -m cursor`.

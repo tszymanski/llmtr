@@ -7,9 +7,10 @@ freely; changing them needs the orchestrator (they are shared by M2, M3 and M4).
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 from llmtr.notify import Urgency
 from llmtr.prompts import Message
@@ -202,6 +203,111 @@ class FakeRunner:
 
 
 @dataclass
+class CursorCall:
+    """One call of ``FakeCursorTransport``. ``path`` is the URL path plus ``?query``;
+    ``method`` is ``"STREAM"`` for ``stream``."""
+
+    method: str
+    url: str
+    path: str
+    payload: dict[str, Any] | None
+    timeout: float
+
+
+CursorScript = Response | Sequence[Response]
+StreamItem = tuple[str, str] | BaseException
+
+
+class FakeCursorTransport:
+    """``cursor_client.CursorTransport`` with scripted answers; nothing touches the network.
+
+    - ``responses[(method, path)]``: a dict (returned on every call), an exception (raised on
+      every call) or a list of those (popped in order; an empty list is an error).
+    - ``streams[path]``: a list of ``(event, data)`` pairs and exceptions; an exception is raised
+      at its position, i.e. the stream breaks there. ``path`` is the stream URL's path.
+    - ``stream_error``: optional exception raised when a stream is opened.
+    - ``on_stream``: optional callback run with each yielded event (e.g. to raise ``Cancelled``
+      or advance a fake clock).
+
+    Every call is recorded in ``calls`` (``CursorCall``, with the ``payload``). An unscripted call
+    raises ``AssertionError``. Use ``http_error`` to build an ``HTTPStatusError``.
+    """
+
+    def __init__(
+        self,
+        responses: Mapping[tuple[str, str], CursorScript] | None = None,
+        streams: Mapping[str, Sequence[StreamItem]] | None = None,
+        *,
+        stream_error: BaseException | None = None,
+        on_stream: Callable[[str, str], None] | None = None,
+    ) -> None:
+        self.responses: dict[tuple[str, str], Any] = {
+            key: list(value) if isinstance(value, list | tuple) else value
+            for key, value in (responses or {}).items()
+        }
+        self.streams: dict[str, list[StreamItem]] = {
+            key: list(value) for key, value in (streams or {}).items()
+        }
+        self.stream_error = stream_error
+        self.on_stream = on_stream
+        self.calls: list[CursorCall] = []
+
+    @staticmethod
+    def _path(url: str) -> str:
+        parts = urlsplit(url)
+        return f"{parts.path}?{parts.query}" if parts.query else parts.path
+
+    def request(
+        self, method: str, url: str, payload: Mapping[str, Any] | None, timeout: float
+    ) -> dict[str, Any]:
+        path = self._path(url)
+        self.calls.append(
+            CursorCall(method, url, path, dict(payload) if payload is not None else None, timeout)
+        )
+        key = (method, path)
+        if key not in self.responses:
+            raise AssertionError(f"FakeCursorTransport: no response for {method} {path}")
+        item = self.responses[key]
+        if isinstance(item, list):
+            if not item:
+                raise AssertionError(f"FakeCursorTransport: responses for {method} {path} used up")
+            item = item.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return dict(item)
+
+    def stream(self, url: str, timeout: float) -> Iterator[tuple[str, str]]:
+        path = self._path(url)
+        self.calls.append(CursorCall("STREAM", url, path, None, timeout))
+        if self.stream_error is not None:
+            raise self.stream_error
+        if path not in self.streams:
+            raise AssertionError(f"FakeCursorTransport: no stream for {path}")
+        return self._events(self.streams[path])
+
+    def _events(self, items: list[StreamItem]) -> Iterator[tuple[str, str]]:
+        for item in items:
+            if isinstance(item, BaseException):
+                raise item
+            if self.on_stream is not None:
+                self.on_stream(*item)
+            yield item
+
+    def paths(self, method: str | None = None) -> list[str]:
+        """Recorded paths, optionally only for one method."""
+        return [c.path for c in self.calls if method is None or c.method == method]
+
+    @staticmethod
+    def http_error(status: int, body: str = "", retry_after: float | None = None) -> Exception:
+        """An ``ollama_client.HTTPStatusError`` as ``UrllibCursorTransport`` raises it."""
+        from llmtr.ollama_client import HTTPStatusError
+
+        error = HTTPStatusError(status, body)
+        error.retry_after = retry_after  # type: ignore[attr-defined]
+        return error
+
+
+@dataclass
 class FakeClock:
     """Injectable ``sleep``/``monotonic`` pair: ``sleep`` advances ``now`` instantly."""
 
@@ -218,6 +324,8 @@ class FakeClock:
 
 __all__ = [
     "ChatCall",
+    "CursorCall",
+    "FakeCursorTransport",
     "FakeChatClient",
     "FakeClipboard",
     "FakeClock",

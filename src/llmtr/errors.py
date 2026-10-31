@@ -151,10 +151,104 @@ class SecureInputActive(EmptySelection):
         self.args = (self.user_message,)
 
 
+# --- v3: Cursor engine (architecture section 23) ------------------------------------------
+
+
+class CursorError(LlmtrError):
+    """Any Cursor failure without a more specific class: other 4xx, bad JSON, a run that ended
+    ``ERROR``/``EXPIRED``/``CANCELLED`` (``"Cursor agent failed."``). Base of the Cursor errors."""
+
+    def __init__(self, user_message: str = "Cursor refused the request.", detail: str = "") -> None:
+        super().__init__(user_message, detail)
+
+
+class CursorKeyMissing(CursorError):
+    """No Cursor API key in ``CURSOR_API_KEY``, the macOS Keychain or the key file."""
+
+    def __init__(self, path: Path | str, keychain: bool = False) -> None:
+        where = f"{path} (mode 600)"
+        if keychain:
+            where += " or in the Keychain as llmtr-cursor"
+        super().__init__(f"No Cursor API key. Put it in {where}.")
+        self.path = Path(path)
+
+
+class CursorKeyInsecure(CursorError):
+    """The key file has group or other permission bits; it is not read."""
+
+    def __init__(self, path: Path | str) -> None:
+        super().__init__(f"Cursor API key file is readable by others. Run: chmod 600 {path}")
+        self.path = Path(path)
+
+
+class CursorAuthError(CursorError):
+    """HTTP 401: the key was rejected."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Cursor rejected the API key. Create a new one in Cursor Dashboard → API Keys."
+        )
+
+
+class CursorStorageDisabled(CursorError):
+    """HTTP 403 ``feature_unavailable``: Cursor privacy is "Privacy Mode (Legacy)"."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            'Cursor agents need storage: set Cursor Privacy to "Privacy Mode" (not Legacy).'
+        )
+
+
+class CursorModelInvalid(CursorError):
+    """HTTP 400 ``invalid_model``: ``cursor.model`` is not available to the account."""
+
+    def __init__(self, model: str) -> None:
+        super().__init__(
+            f"Cursor model {model} is not available. Check cursor.model in config.toml."
+        )
+        self.model = model
+
+
+class CursorRateLimited(CursorError):
+    """HTTP 429. ``retry_after`` comes from the ``Retry-After`` header (``None`` if absent)."""
+
+    def __init__(self, retry_after: float | None = None) -> None:
+        if retry_after is None:
+            message = "Cursor rate limit reached. Try again in a minute."
+        else:
+            message = f"Cursor rate limit reached. Try again in {retry_after:g} s."
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class CursorUnavailable(CursorError):
+    """No connection to the Cursor API, or a 5xx answer."""
+
+    def __init__(self, detail: str = "") -> None:
+        super().__init__("Can't reach the Cursor API. Check your connection.", detail)
+
+
+class CursorTimeout(CursorError):
+    """No final text within ``cursor.timeout`` (or a request exceeded its own timeout)."""
+
+    def __init__(self, timeout: float) -> None:
+        super().__init__(f"Cursor did not answer within {timeout:g} s. Try again.")
+        self.timeout = timeout
+
+
 __all__ = [
     "Cancelled",
     "ClipboardUnavailable",
     "ConfigError",
+    "CursorAuthError",
+    "CursorError",
+    "CursorKeyInsecure",
+    "CursorKeyMissing",
+    "CursorModelInvalid",
+    "CursorRateLimited",
+    "CursorStorageDisabled",
+    "CursorTimeout",
+    "CursorUnavailable",
     "EmptySelection",
     "KeySendError",
     "LlmtrError",

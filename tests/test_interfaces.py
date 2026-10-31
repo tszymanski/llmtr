@@ -157,6 +157,31 @@ PUBLIC_NAMES: dict[str, list[str]] = {
     ],
 }
 PUBLIC_NAMES["llmtr.errors"] += ["MacKeySendError", "SecureInputActive"]
+# v3 (Cursor engine), architecture section 23
+PUBLIC_NAMES["llmtr.errors"] += [
+    "CursorError",
+    "CursorKeyMissing",
+    "CursorKeyInsecure",
+    "CursorAuthError",
+    "CursorStorageDisabled",
+    "CursorModelInvalid",
+    "CursorRateLimited",
+    "CursorUnavailable",
+    "CursorTimeout",
+]
+PUBLIC_NAMES["llmtr.config"] += ["CursorConfig", "ENGINES"]
+PUBLIC_NAMES["llmtr.prompts"] += ["CURSOR_PROMPT_TEMPLATE", "build_cursor_messages"]
+PUBLIC_NAMES["llmtr.fakes"] += ["FakeCursorTransport"]
+PUBLIC_NAMES["llmtr.cli"] += ["make_chat_client"]
+PUBLIC_NAMES["llmtr.cursor_key"] = ["CURSOR_KEY_ENV", "KEYCHAIN_SERVICE", "key_path", "load_key"]
+PUBLIC_NAMES["llmtr.cursor_client"] = [
+    "CursorTransport",
+    "UrllibCursorTransport",
+    "CursorClient",
+    "spawn_cleanup",
+    "delete_agents",
+    "sweep",
+]
 
 
 @pytest.mark.parametrize("module_name", sorted(PUBLIC_NAMES))
@@ -332,3 +357,29 @@ def test_error_message_parameters_default_to_linux_wording() -> None:
     assert errors.EmptySelection(True, "ignored").user_message == (
         "No text selected. Select some text first."
     )
+
+
+def test_cursor_fakes_and_client_satisfy_protocols() -> None:
+    from llmtr import cursor_client
+
+    transport = fakes.FakeCursorTransport()
+    assert isinstance(transport, cursor_client.CursorTransport)
+    client = cursor_client.CursorClient(config.CursorConfig(), transport)
+    assert isinstance(client, ollama_client.ChatClient)
+    assert client.last_agent_id is None
+
+
+def test_cursor_errors_carry_user_messages() -> None:
+    assert isinstance(errors.CursorTimeout(60.0), errors.LlmtrError)
+    assert str(errors.CursorTimeout(60.0)) == "Cursor did not answer within 60 s. Try again."
+    assert errors.CursorError().user_message == "Cursor refused the request."
+    assert errors.CursorRateLimited(12).user_message.endswith("Try again in 12 s.")
+
+
+def test_parser_engine_and_cursor_cleanup() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["fix", "--engine", "cursor", "--stdin"])
+    assert (args.mode, args.engine) == ("fix", "cursor")
+    assert parser.parse_args(["translate"]).engine is None
+    assert parser.parse_args(["cursor-cleanup", "a", "b"]).agent_ids == ["a", "b"]
+    assert parser.parse_args(["cursor-cleanup"]).agent_ids == []

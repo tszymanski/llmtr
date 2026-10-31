@@ -36,6 +36,12 @@ LOG_LEVEL_ENV = "LLMTR_LOG_LEVEL"
 
 _LOG_LEVELS = frozenset({"debug", "info", "error"})
 
+ENGINES = ("ollama", "cursor")
+"""Valid values of the top-level ``engine`` key (v3, architecture section 23)."""
+
+DEFAULT_CURSOR_URL = "https://api.cursor.com"
+"""Cursor Cloud Agents API base URL; ``[cursor] base_url`` overrides it (``https`` only)."""
+
 SUPPORTED_LANGUAGES: dict[str, str] = {"pl": "Polish", "en": "English"}
 """Language code -> English name, as used in the translategemma template. v1: PL and EN only."""
 
@@ -151,6 +157,26 @@ class LogConfig:
 
 
 @dataclass(frozen=True)
+class CursorConfig:
+    """``[cursor]`` table (v3): the Cursor Cloud Agents engine, used when ``engine = "cursor"``."""
+
+    model: str = "gpt-5.4-nano"
+    """``"auto"`` omits ``model`` from the create request (the account default)."""
+    timeout: float = 60.0
+    """Seconds from just before the create request to the final text, overall."""
+    request_timeout: float = 10.0
+    """Seconds for the create and get-run requests."""
+    cancel_timeout: float = 5.0
+    """Seconds for the cancel ``POST`` on a second press (M14 C9: one hung 17 s)."""
+    delete_timeout: float = 60.0
+    """Seconds for one ``DELETE`` in the detached cleanup child (M14: median 11.7 s)."""
+    max_chars: int = 8000
+    """Replaces ``ollama.max_chars`` in ``plan_job`` when the engine is cursor."""
+    base_url: str = DEFAULT_CURSOR_URL
+    """``https`` only; no trailing slash."""
+
+
+@dataclass(frozen=True)
 class Config:
     """The whole parsed ``config.toml``."""
 
@@ -161,6 +187,9 @@ class Config:
     tone: ToneConfig = field(default_factory=ToneConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     log: LogConfig = field(default_factory=LogConfig)
+    engine: str = "ollama"
+    """v3: ``"ollama"`` (default) or ``"cursor"``; top-level ``engine`` key."""
+    cursor: CursorConfig = field(default_factory=CursorConfig)
 
 
 @dataclass(frozen=True)
@@ -350,8 +379,9 @@ def parse_config(
     named ``team`` replaces the built-in one in place.
 
     Raises ``ConfigError(source, ...)`` for a wrong type, an unsupported language code, a
-    language pair with ``native == other``, a non-positive timeout/max_chars, or an Ollama URL
-    whose scheme is not ``http``/``https``.
+    language pair with ``native == other``, a non-positive timeout/max_chars, an Ollama URL
+    whose scheme is not ``http``/``https``, an ``engine`` other than ``ollama``/``cursor``, or a
+    ``cursor.base_url`` that is not ``https``.
     """
     env = env if env is not None else os.environ
     if not isinstance(data, Mapping):
@@ -461,6 +491,10 @@ def parse_config(
         level=level,
     )
 
+    engine = _as_str(data, "engine", Config.engine, "engine", source)
+    if engine not in ENGINES:
+        raise ConfigError(source, f"'engine' must be one of {', '.join(ENGINES)}")
+
     return Config(
         ollama=ollama,
         models=models,
@@ -469,6 +503,36 @@ def parse_config(
         tone=tone,
         notify=notify,
         log=log,
+        engine=engine,
+        cursor=_parse_cursor(_require_table(data, "cursor", source), source),
+    )
+
+
+def _parse_cursor(table: Mapping[str, Any], source: Path | str) -> CursorConfig:
+    """``[cursor]`` table; every number must be > 0 and ``base_url`` must be ``https``."""
+    from urllib.parse import urlsplit
+
+    base_url = _as_str(table, "base_url", CursorConfig.base_url, "cursor.base_url", source)
+    base_url = base_url.strip().rstrip("/")
+    parts = urlsplit(base_url)
+    if parts.scheme.lower() != "https" or not parts.netloc:
+        raise ConfigError(source, "'cursor.base_url' must be an https:// URL")
+
+    def number(key: str) -> float:
+        return _as_number(
+            table, key, getattr(CursorConfig, key), f"cursor.{key}", source, positive=True
+        )
+
+    return CursorConfig(
+        model=_as_str(table, "model", CursorConfig.model, "cursor.model", source),
+        timeout=number("timeout"),
+        request_timeout=number("request_timeout"),
+        cancel_timeout=number("cancel_timeout"),
+        delete_timeout=number("delete_timeout"),
+        max_chars=_as_int(
+            table, "max_chars", CursorConfig.max_chars, "cursor.max_chars", source, positive=True
+        ),
+        base_url=base_url,
     )
 
 
@@ -558,7 +622,9 @@ def save_last_result(text: str, directory: Path | None = None) -> Path:
 
 
 __all__ = [
+    "DEFAULT_CURSOR_URL",
     "DEFAULT_OLLAMA_URL",
+    "ENGINES",
     "LOG_LEVEL_ENV",
     "NOTIFY_BACKENDS",
     "OLLAMA_HOST_ENV",
@@ -566,6 +632,7 @@ __all__ = [
     "TEAM_TONE",
     "TEAM_TONE_INSTRUCTION",
     "Config",
+    "CursorConfig",
     "KeyOverride",
     "KeysConfig",
     "LanguagesConfig",

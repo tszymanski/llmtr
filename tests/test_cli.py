@@ -11,6 +11,7 @@ another process.
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import signal
@@ -41,7 +42,14 @@ from llmtr.errors import (
     OllamaTimeout,
     OllamaUnavailable,
 )
-from llmtr.fakes import FakeChatClient, FakeClipboard, FakeClock, FakeKeySender, FakeNotifier
+from llmtr.fakes import (
+    FakeChatClient,
+    FakeClipboard,
+    FakeClock,
+    FakeCursorTransport,
+    FakeKeySender,
+    FakeNotifier,
+)
 from llmtr.lock import RunLock
 
 
@@ -1060,3 +1068,244 @@ def test_main_macos_bad_notify_backend_notifies_with_config_error(monkeypatch, t
         f"Config error in {path}: 'notify.backend' must be one of auto, hammerspoon, osascript"
     )
     assert notifier.shown[0].urgency == "critical"
+
+
+# --- v3: Cursor engine (M15) -------------------------------------------------------------------
+
+CURSOR_SECRET = "key_TESTONLY_cli_0123456789"
+CURSOR_AGENT = "bc-7a1f00-agent-id"
+CURSOR_RUN = "run-e8e8"
+CURSOR_STREAM = f"/v1/agents/{CURSOR_AGENT}/runs/{CURSOR_RUN}/stream"
+
+
+def _cursor_transport(text: str = "Hello") -> FakeCursorTransport:
+    created = {"agent": {"id": CURSOR_AGENT}, "run": {"id": CURSOR_RUN}}
+    result = json.dumps({"status": "FINISHED", "text": text})
+    return FakeCursorTransport(
+        {("POST", "/v1/agents"): created}, {CURSOR_STREAM: [("result", result)]}
+    )
+
+
+def _cursor_config() -> Config:
+    return parse_config({"engine": "cursor"}, env={})
+
+
+def test_main_stdin_engine_cursor_prints_result(monkeypatch, capsys) -> None:
+    seen: dict = {}
+
+    def fake_client(cursor_config, transport):
+        seen["config"] = cursor_config
+        seen["transport"] = transport
+        return FakeChatClient("Hello")
+
+    monkeypatch.setenv("CURSOR_API_KEY", CURSOR_SECRET)
+    monkeypatch.setattr(cli, "UrllibCursorTransport", lambda key: ("transport", key))
+    monkeypatch.setattr(cli, "CursorClient", fake_client)
+    monkeypatch.setattr(cli, "OllamaClient", lambda url, timeout: pytest.fail("used Ollama"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO("Cześć"))
+
+    code = cli.main(["translate", "--engine", "cursor", "--stdin"])
+
+    assert code == cli.EXIT_OK
+    assert capsys.readouterr().out == "Hello"
+    assert seen["transport"] == ("transport", CURSOR_SECRET)
+    assert seen["config"].model == "gpt-5.4-nano"
+
+
+def test_main_stdin_engine_ollama_overrides_cursor_config(monkeypatch, tmp_path, capsys) -> None:
+    cfg_file = tmp_path / "c.toml"
+    cfg_file.write_text('engine = "cursor"\n', encoding="utf-8")
+    monkeypatch.setattr(cli, "OllamaClient", lambda url, timeout: FakeChatClient("Hi"))
+    monkeypatch.setattr(cli, "CursorClient", lambda *a: pytest.fail("used Cursor"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO("Cześć"))
+
+    code = cli.main(["--config", str(cfg_file), "translate", "--engine", "ollama", "--stdin"])
+
+    assert code == cli.EXIT_OK
+    assert capsys.readouterr().out == "Hi"
+
+
+def test_main_stdin_cursor_model_flag_overrides_cursor_model(monkeypatch) -> None:
+    chat = FakeChatClient("ok")
+    monkeypatch.setenv("CURSOR_API_KEY", CURSOR_SECRET)
+    monkeypatch.setattr(cli, "UrllibCursorTransport", lambda key: None)
+    monkeypatch.setattr(cli, "CursorClient", lambda cfg, transport: chat)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("text"))
+
+    assert cli.main(["fix", "--engine", "cursor", "--model", "auto", "--stdin"]) == cli.EXIT_OK
+    assert chat.calls[0].model == "auto"
+
+
+def test_main_stdin_cursor_key_missing_prints_message(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.delenv("CURSOR_API_KEY", raising=False)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("text"))
+
+    code = cli.main(["fix", "--engine", "cursor", "--stdin"])
+
+    assert code == cli.EXIT_ERROR
+    path = tmp_path / "config" / "llmtr" / "cursor-api-key"
+    assert capsys.readouterr().err.strip() == f"No Cursor API key. Put it in {path} (mode 600)."
+
+
+def test_run_shortcut_cursor_engine_pastes_and_calls_cleanup(monkeypatch, tmp_path) -> None:
+    from llmtr.cursor_client import CursorClient
+
+    clip = FakeClipboard("old")
+    keys = _selecting_keys(clip, "Cześć, jak się masz?")
+    notifier = FakeNotifier()
+    transport = _cursor_transport("Hello, how are you?")
+    cleaned: list[str] = []
+    keys_seen: list[str] = []
+
+    def make_transport(key: str):
+        keys_seen.append(key)
+        return transport
+
+    monkeypatch.setenv("CURSOR_API_KEY", CURSOR_SECRET)
+    monkeypatch.setattr(cli, "UrllibCursorTransport", make_transport)
+    monkeypatch.setattr(
+        cli,
+        "CursorClient",
+        lambda cfg, tr: CursorClient(cfg, tr, spawn_cleanup=cleaned.append),
+    )
+    logger = log.setup_logging(LogConfig())
+
+    code = cli.run_shortcut(
+        Mode.TRANSLATE, _cursor_config(), notifier, clipboard=clip, keys=keys, logger=logger
+    )
+
+    assert code == cli.EXIT_OK
+    assert keys.sent == ["ctrl+c", "ctrl+v"]
+    assert "Hello, how are you?" in clip.history
+    assert clip.get_text() == "old"
+    assert cleaned == [CURSOR_AGENT]
+    assert keys_seen == [CURSOR_SECRET]
+    assert [(n.summary, n.body) for n in notifier.shown] == [
+        ("Translating PL → EN…", "gpt-5.4-nano (Cursor)")
+    ]
+    log_text = _log_file(tmp_path).read_text(encoding="utf-8")
+    assert "engine=cursor" in log_text
+    assert f"agent={CURSOR_AGENT[:6]} " in log_text or log_text.rstrip().endswith(
+        f"agent={CURSOR_AGENT[:6]}"
+    )
+    assert CURSOR_AGENT not in log_text
+    assert CURSOR_SECRET not in log_text
+    assert "Cześć" not in log_text and "Hello, how" not in log_text
+
+
+def test_run_shortcut_cursor_key_error_notifies_and_restores_clipboard(
+    monkeypatch, tmp_path
+) -> None:
+    clip = FakeClipboard("old")
+    keys = _selecting_keys(clip, "some text")
+    notifier = FakeNotifier()
+    monkeypatch.delenv("CURSOR_API_KEY", raising=False)
+    key_file = tmp_path / "config" / "llmtr" / "cursor-api-key"
+    key_file.parent.mkdir(parents=True)
+    key_file.write_text(CURSOR_SECRET, encoding="utf-8")
+    key_file.chmod(0o644)
+
+    code = cli.run_shortcut(Mode.FIX, _cursor_config(), notifier, clipboard=clip, keys=keys)
+
+    assert code == cli.EXIT_ERROR
+    assert clip.get_text() == "old"
+    assert keys.sent == ["ctrl+c"]
+    assert notifier.shown[-1].summary == (
+        f"Cursor API key file is readable by others. Run: chmod 600 {key_file}"
+    )
+    assert notifier.shown[-1].urgency == "critical"
+
+
+def test_run_shortcut_cursor_error_restores_clipboard(monkeypatch) -> None:
+    from llmtr.cursor_client import CursorClient
+
+    clip = FakeClipboard("old")
+    keys = _selecting_keys(clip, "some text")
+    notifier = FakeNotifier()
+    transport = FakeCursorTransport(
+        {("POST", "/v1/agents"): FakeCursorTransport.http_error(401, "{}")}
+    )
+    client = CursorClient(_cursor_config().cursor, transport, spawn_cleanup=lambda a: None)
+
+    code = cli.run_shortcut(
+        Mode.FIX, _cursor_config(), notifier, clipboard=clip, keys=keys, client=client
+    )
+
+    assert code == cli.EXIT_ERROR
+    assert clip.get_text() == "old"
+    assert notifier.shown[-1].summary.startswith("Cursor rejected the API key.")
+
+
+def test_run_shortcut_ollama_log_line_has_engine(tmp_path) -> None:
+    clip = FakeClipboard("old")
+    keys = _selecting_keys(clip, "text")
+    logger = log.setup_logging(LogConfig())
+
+    cli.run_shortcut(
+        Mode.FIX,
+        Config(),
+        FakeNotifier(),
+        clipboard=clip,
+        keys=keys,
+        client=FakeChatClient("txt"),
+        logger=logger,
+    )
+
+    line = _log_file(tmp_path).read_text(encoding="utf-8").strip()
+    assert line.endswith("engine=ollama")
+
+
+def _cleanup_transport(fail: bool = True) -> FakeCursorTransport:
+    err = FakeCursorTransport.http_error
+    return FakeCursorTransport(
+        {
+            ("DELETE", "/v1/agents/a1"): err(500, "down") if fail else {"id": "a1"},
+            ("DELETE", "/v1/agents/a2"): {"id": "a2"},
+            ("GET", "/v1/agents?includeArchived=true&limit=100"): {
+                "agents": [{"id": "x9", "name": "llmtr-00000000", "status": "FINISHED"}]
+            },
+            ("DELETE", "/v1/agents/x9"): err(429, "{}"),
+        }
+    )
+
+
+def test_main_cursor_cleanup_deletes_then_sweeps_and_exits_zero(monkeypatch, tmp_path) -> None:
+    transport = _cleanup_transport()
+    monkeypatch.setenv("CURSOR_API_KEY", CURSOR_SECRET)
+    monkeypatch.setattr(cli, "UrllibCursorTransport", lambda key: transport)
+    monkeypatch.setattr(backends, "make_notifier", lambda *a, **k: pytest.fail("notified"))
+
+    code = cli.main(["cursor-cleanup", "a1", "a2"])
+
+    assert code == cli.EXIT_OK
+    assert [(c.method, c.path) for c in transport.calls] == [
+        ("DELETE", "/v1/agents/a1"),
+        ("DELETE", "/v1/agents/a2"),
+        ("GET", "/v1/agents?includeArchived=true&limit=100"),
+        ("DELETE", "/v1/agents/x9"),
+    ]
+    log_text = _log_file(tmp_path).read_text(encoding="utf-8")
+    assert "deleted=1" in log_text
+    assert "a1" in log_text  # failure logged with the short id
+    assert CURSOR_SECRET not in log_text
+
+
+def test_main_cursor_cleanup_without_ids_only_sweeps(monkeypatch) -> None:
+    transport = _cleanup_transport()
+    monkeypatch.setenv("CURSOR_API_KEY", CURSOR_SECRET)
+    monkeypatch.setattr(cli, "UrllibCursorTransport", lambda key: transport)
+
+    assert cli.main(["cursor-cleanup"]) == cli.EXIT_OK
+    assert transport.paths() == [
+        "/v1/agents?includeArchived=true&limit=100",
+        "/v1/agents/x9",
+    ]
+
+
+def test_main_cursor_cleanup_without_key_exits_zero_silently(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("CURSOR_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "UrllibCursorTransport", lambda key: pytest.fail("no key expected"))
+    monkeypatch.setattr(backends, "make_notifier", lambda *a, **k: pytest.fail("notified"))
+
+    assert cli.main(["cursor-cleanup", "a1"]) == cli.EXIT_OK
+    assert "CursorKeyMissing" in _log_file(tmp_path).read_text(encoding="utf-8")

@@ -150,3 +150,89 @@ def test_translate_pl_to_en_with_real_ollama() -> None:
     client = OllamaClient(cfg.ollama.url, cfg.ollama.timeout)
     result = run_job(job, client, cfg)
     assert result.strip()
+
+
+# --- v3: cursor engine (M15) -------------------------------------------------------------------
+
+
+def _cursor_config(**cursor) -> Config:
+    return dataclasses.replace(
+        Config(), engine="cursor", cursor=dataclasses.replace(Config().cursor, **cursor)
+    )
+
+
+def test_plan_job_cursor_picks_model_limit_and_one_message() -> None:
+    from llmtr.prompts import build_cursor_messages
+
+    job = plan_job(Mode.TRANSLATE, "Cześć, jak się masz?", Config(), engine="cursor")
+    assert job.engine == "cursor"
+    assert job.model == "gpt-5.4-nano"
+    assert (job.source_lang, job.target_lang) == ("pl", "en")
+    assert list(job.messages) == build_cursor_messages(
+        "translate", "Cześć, jak się masz?", source="pl", target="en"
+    )
+    assert len(job.messages) == 1 and job.messages[0]["role"] == "user"
+
+
+def test_plan_job_cursor_quality_ignored_and_model_override() -> None:
+    assert plan_job(Mode.TRANSLATE, "Hi", Config(), engine="cursor", quality=True).model == (
+        "gpt-5.4-nano"
+    )
+    assert plan_job(Mode.FIX, "Hi", Config(), engine="cursor", model="auto").model == "auto"
+
+
+def test_plan_job_cursor_tone_and_fix_messages() -> None:
+    from llmtr.config import TEAM_TONE
+    from llmtr.prompts import build_cursor_messages
+
+    tone = plan_job(Mode.TONE, "Hi all", Config(), engine="cursor", tone=TEAM_TONE)
+    assert list(tone.messages) == build_cursor_messages("tone", "Hi all", tone=TEAM_TONE)
+    fix = plan_job(Mode.FIX, "Hi all", Config(), engine="cursor")
+    assert list(fix.messages) == build_cursor_messages("fix", "Hi all")
+
+
+def test_plan_job_cursor_uses_cursor_max_chars() -> None:
+    cfg = dataclasses.replace(_cursor_config(max_chars=5), ollama=Config().ollama)
+    with pytest.raises(TextTooLong) as info:
+        plan_job(Mode.FIX, "123456", cfg)
+    assert info.value.limit == 5
+    # Ollama's limit does not apply to the cursor engine, and vice versa.
+    big = "x" * 9000
+    ollama_small = dataclasses.replace(
+        _cursor_config(max_chars=10000),
+        ollama=dataclasses.replace(Config().ollama, max_chars=10),
+    )
+    assert plan_job(Mode.FIX, big, ollama_small).engine == "cursor"
+
+
+def test_plan_job_engine_none_follows_config() -> None:
+    assert plan_job(Mode.FIX, "Hi", _cursor_config()).engine == "cursor"
+    assert plan_job(Mode.FIX, "Hi", _cursor_config(model="m1")).model == "m1"
+    assert plan_job(Mode.FIX, "Hi", Config()).engine == "ollama"
+    assert plan_job(Mode.FIX, "Hi", _cursor_config(), engine="ollama").model == "gemma3"
+
+
+def test_progress_text_cursor_body() -> None:
+    job = plan_job(Mode.TRANSLATE, "Cześć, jak się masz?", Config(), engine="cursor")
+    assert progress_text(job) == ("Translating PL → EN…", "gpt-5.4-nano (Cursor)")
+    fix = plan_job(Mode.FIX, "Hi", Config(), engine="cursor")
+    assert progress_text(fix) == ("Fixing grammar…", "gpt-5.4-nano (Cursor)")
+    assert progress_text(plan_job(Mode.FIX, "Hi", Config()))[1] == "gemma3"
+
+
+def test_run_job_with_cursor_client_and_fake_transport() -> None:
+    from llmtr.cursor_client import CursorClient
+    from llmtr.fakes import FakeCursorTransport
+
+    created = {"agent": {"id": "bc-1"}, "run": {"id": "run-1"}}
+    result = '{"status": "FINISHED", "text": "Sure, here is the text:\\nHello"}'
+    transport = FakeCursorTransport(
+        {("POST", "/v1/agents"): created},
+        {"/v1/agents/bc-1/runs/run-1/stream": [("result", result)]},
+    )
+    cleaned: list[str] = []
+    cfg = _cursor_config()
+    client = CursorClient(cfg.cursor, transport, spawn_cleanup=cleaned.append)
+    job = plan_job(Mode.TRANSLATE, "Cześć\n", cfg)
+    assert run_job(job, client, cfg) == "Hello\n"
+    assert cleaned == ["bc-1"]

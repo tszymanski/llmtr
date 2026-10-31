@@ -17,10 +17,11 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from llmtr import backends, log
+from llmtr import backends, cursor_key, log
 from llmtr.backends import Desktop
 from llmtr.clipboard import Clipboard
 from llmtr.config import (
+    ENGINES,
     Config,
     State,
     current_tone,
@@ -30,18 +31,22 @@ from llmtr.config import (
     save_last_result,
     save_state,
 )
+from llmtr.cursor_client import CursorClient, UrllibCursorTransport, delete_agents, sweep
 from llmtr.engine import Mode, plan_job, progress_text, run_job
 from llmtr.errors import Cancelled, EmptySelection, LlmtrError, SecureInputActive
 from llmtr.keys import KeySender, resolve_key_pair
 from llmtr.lock import RunLock, cancel_running, default_lock_path, install_cancel_handler
 from llmtr.notify import Notifier
 from llmtr.ollama_client import ChatClient, OllamaClient
-from llmtr.platforms import detect_platform
+from llmtr.platforms import Platform, detect_platform
 from llmtr.selection import Captured, capture_selection, deliver_result, restore_clipboard
 
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
+
+CURSOR_CLEANUP = "cursor-cleanup"
+"""Subcommand run by the detached cleanup child (``cursor_client.spawn_cleanup``)."""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,6 +68,11 @@ def build_parser() -> argparse.ArgumentParser:
             "notifications",
         )
         p.add_argument("--model", metavar="NAME", help="override the configured model")
+        p.add_argument(
+            "--engine",
+            choices=ENGINES,
+            help="override the configured engine (ollama: local; cursor: Cursor cloud agent)",
+        )
         return p
 
     translate = add_mode(Mode.TRANSLATE, "translate PL<->EN (direction detected)")
@@ -95,6 +105,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="number of recent log lines to print (default: 20)",
     )
+
+    cleanup = sub.add_parser(
+        CURSOR_CLEANUP,
+        help="delete llmtr's Cursor agents",
+        description="delete llmtr's Cursor agents: the given ones, then leftovers (at most "
+        "hourly); always exits 0",
+    )
+    cleanup.add_argument("agent_ids", nargs="*", metavar="AGENT_ID", help="agent ids to delete")
     return parser
 
 
@@ -115,6 +133,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.mode == "log":
         return _run_log(args)
+
+    if args.mode == CURSOR_CLEANUP:
+        return _run_cursor_cleanup(args)
 
     # Defaults first, so a config error below (which has no `config.log` yet) is still logged.
     logger = log.setup_logging(None)
@@ -154,14 +175,82 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     quality = getattr(args, "quality", False)
     model = args.model
+    engine = args.engine
 
     if args.stdin:
-        return _run_stdin(mode, config, quality=quality, model=model, logger=logger)
+        return _run_stdin(
+            mode,
+            config,
+            quality=quality,
+            model=model,
+            engine=engine,
+            platform=platform,
+            logger=logger,
+        )
 
     desktop = backends.make_desktop(platform, keys_config=config.keys)
     return run_shortcut(
-        mode, config, notifier, quality=quality, model=model, desktop=desktop, logger=logger
+        mode,
+        config,
+        notifier,
+        quality=quality,
+        model=model,
+        engine=engine,
+        desktop=desktop,
+        logger=logger,
     )
+
+
+def make_chat_client(config: Config, engine: str, platform: Platform) -> ChatClient:
+    """The one place that picks the model client (``run_shortcut`` and ``--stdin``).
+
+    ``"cursor"`` -> ``CursorClient`` with the key from ``cursor_key.load_key(platform)`` (may
+    raise ``CursorKeyMissing``/``CursorKeyInsecure``); anything else -> ``OllamaClient``.
+    """
+    if engine == "cursor":
+        return CursorClient(config.cursor, UrllibCursorTransport(cursor_key.load_key(platform)))
+    return OllamaClient(config.ollama.url, config.ollama.timeout)
+
+
+def _run_line(record: log.RunRecord, engine: str, client: ChatClient | None) -> str:
+    """The run log line: ``RunRecord`` plus ``engine=`` and, for Cursor, the agent id's first
+    6 characters (never the whole id, the key or any text)."""
+    line = f"{record} engine={engine}"
+    agent_id = getattr(client, "last_agent_id", None) if client is not None else None
+    if isinstance(agent_id, str) and agent_id:
+        line += f" agent={agent_id[:6]}"
+    return line
+
+
+def _run_cursor_cleanup(args: argparse.Namespace) -> int:
+    """``llmtr cursor-cleanup [AGENT_ID ...]``: delete the given agents, then sweep.
+
+    Run by the detached child after a Cursor call (or by hand). Loads config and key itself,
+    logs failures, never notifies, and always exits 0.
+    """
+    logger = log.setup_logging(None)
+    platform = detect_platform()
+    try:
+        config = load_config(Path(args.config) if args.config else None, platform=platform)
+        logger = log.setup_logging(config.log)
+        transport = UrllibCursorTransport(cursor_key.load_key(platform))
+        deleted = delete_agents(args.agent_ids, config.cursor, transport)
+        swept = sweep(config.cursor, transport, now=time.time())
+        if logger is not None:
+            logger.info(
+                "mode=%s requested=%d deleted=%d swept=%d",
+                CURSOR_CLEANUP,
+                len(args.agent_ids),
+                deleted,
+                swept,
+            )
+    except LlmtrError as exc:
+        if logger is not None:
+            logger.error("%s: %s: %s", CURSOR_CLEANUP, type(exc).__name__, exc.user_message)
+    except Exception as exc:
+        if logger is not None:
+            logger.error("%s: unexpected error: %s", CURSOR_CLEANUP, exc, exc_info=True)
+    return EXIT_OK
 
 
 def _run_tone_next(
@@ -263,6 +352,8 @@ def _run_stdin(
     *,
     quality: bool,
     model: str | None,
+    engine: str | None = None,
+    platform: Platform = "linux",
     logger: logging.Logger | None = None,
 ) -> int:
     """``--stdin``: read text, run the engine, print the result (architecture 3.3)."""
@@ -270,12 +361,15 @@ def _run_stdin(
     outcome = "ok"
     output_length = 0
     job_model = model
+    job_engine = engine or config.engine
+    client: ChatClient | None = None
     start = time.monotonic()
     try:
         tone = current_tone(config, load_state()) if mode == Mode.TONE else None
-        job = plan_job(mode, text, config, tone=tone, quality=quality, model=model)
+        job = plan_job(mode, text, config, tone=tone, quality=quality, model=model, engine=engine)
         job_model = job.model
-        client = OllamaClient(config.ollama.url, config.ollama.timeout)
+        job_engine = job.engine
+        client = make_chat_client(config, job.engine, platform)
         result = run_job(job, client, config)
         output_length = len(result)
     except LlmtrError as exc:
@@ -298,19 +392,16 @@ def _run_stdin(
     finally:
         if logger is not None:
             flags = ("stdin", "quality") if quality else ("stdin",)
-            logger.info(
-                str(
-                    log.RunRecord(
-                        mode=mode.value,
-                        outcome=outcome,
-                        model=job_model,
-                        duration=time.monotonic() - start,
-                        input_length=len(text),
-                        output_length=output_length,
-                        flags=flags,
-                    )
-                )
+            record = log.RunRecord(
+                mode=mode.value,
+                outcome=outcome,
+                model=job_model,
+                duration=time.monotonic() - start,
+                input_length=len(text),
+                output_length=output_length,
+                flags=flags,
             )
+            logger.info(_run_line(record, job_engine, client))
 
 
 def _is_plain_empty_capture(exc: LlmtrError) -> bool:
@@ -337,6 +428,7 @@ def run_shortcut(
     *,
     quality: bool = False,
     model: str | None = None,
+    engine: str | None = None,
     desktop: Desktop | None = None,
     clipboard: Clipboard | None = None,
     keys: KeySender | None = None,
@@ -358,7 +450,10 @@ def run_shortcut(
     signals a real process. ``logger`` (from ``log.setup_logging``) gets one INFO summary line
     at the end of every run that reaches the lock, plus an ERROR line (with traceback) for any
     ``LlmtrError`` other than ``Cancelled``, and for any unexpected exception. See
-    ``docs/architecture.md`` section 3.1.
+    ``docs/architecture.md`` section 3.1. ``engine`` (``None`` -> ``config.engine``) is the
+    ``--engine`` override; without an injected ``client`` the client comes from
+    ``make_chat_client`` after the lock and the capture, so a missing Cursor key is reported with
+    the clipboard restored and a second press can still cancel.
     """
     if desktop is None:
         desktop = backends.make_desktop(detect_platform(), keys_config=config.keys)
@@ -369,6 +464,8 @@ def run_shortcut(
 
     captured: Captured | None = None
     job_model: str | None = None
+    job_engine = engine or config.engine
+    chat_client: ChatClient | None = None
     outcome = "ok"
     output_length = 0
     start = monotonic()
@@ -384,8 +481,17 @@ def run_shortcut(
             )
 
             tone = current_tone(config, load_state()) if mode == Mode.TONE else None
-            job = plan_job(mode, captured.text, config, tone=tone, quality=quality, model=model)
+            job = plan_job(
+                mode,
+                captured.text,
+                config,
+                tone=tone,
+                quality=quality,
+                model=model,
+                engine=engine,
+            )
             job_model = job.model
+            job_engine = job.engine
 
             if config.notify.enabled:
                 notifier.notify(*progress_text(job))
@@ -393,7 +499,7 @@ def run_shortcut(
             if client is not None:
                 chat_client = client
             else:
-                chat_client = OllamaClient(config.ollama.url, config.ollama.timeout)
+                chat_client = make_chat_client(config, job.engine, desktop.platform)
             result = run_job(job, chat_client, config)
             output_length = len(result)
             save_last_result(result)
@@ -432,22 +538,26 @@ def run_shortcut(
         finally:
             if logger is not None:
                 flags = ("quality",) if quality else ()
-                logger.info(
-                    str(
-                        log.RunRecord(
-                            mode=mode.value,
-                            outcome=outcome,
-                            model=job_model,
-                            duration=monotonic() - start,
-                            input_length=len(captured.text) if captured is not None else 0,
-                            output_length=output_length,
-                            used_keystrokes=(
-                                captured.used_keystrokes if captured is not None else None
-                            ),
-                            flags=flags,
-                        )
-                    )
+                record = log.RunRecord(
+                    mode=mode.value,
+                    outcome=outcome,
+                    model=job_model,
+                    duration=monotonic() - start,
+                    input_length=len(captured.text) if captured is not None else 0,
+                    output_length=output_length,
+                    used_keystrokes=(captured.used_keystrokes if captured is not None else None),
+                    flags=flags,
                 )
+                logger.info(_run_line(record, job_engine, chat_client))
 
 
-__all__ = ["EXIT_ERROR", "EXIT_OK", "EXIT_USAGE", "build_parser", "main", "run_shortcut"]
+__all__ = [
+    "CURSOR_CLEANUP",
+    "EXIT_ERROR",
+    "EXIT_OK",
+    "EXIT_USAGE",
+    "build_parser",
+    "main",
+    "make_chat_client",
+    "run_shortcut",
+]

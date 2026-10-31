@@ -34,4 +34,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-markers = ["ollama: needs a running Ollama server (skipped unless LLMTR_OLLAMA_TESTS=1)"]
+markers = [
+    "ollama: needs a running Ollama server (skipped unless LLMTR_OLLAMA_TESTS=1)",
+    "cursor: needs the real Cursor API and key, host only (skipped unless LLMTR_CURSOR_TESTS=1)",
+]

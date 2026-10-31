@@ -30,6 +30,7 @@ One row per task. Times in local time (Europe/Warsaw).
 | M12-fix2 | Mac fix worker (Claude Code on the user's Mac, Opus 5.5, interactive) | MacBook Pro M1 16 GB, macOS 27.0.1 | 2026-10-26 | 2026-10-26 | 0 (orchestrator review PASS) | merged | no code defect: trace shows Cancelled. replaces Translating… (same id, first run); M12 misread macOS banner replacement; README wording + Focus-mode troubleshooting; 3/3 cancel, normal, error one bubble each; reruns: none |
 | M11-fix2 | Integration worker (claude in sbx) | sbx llmtr-m11-fix2 | 2026-10-26 22:35 | ~22:42 | 0 (orchestrator review PASS) | merged | reruns: none; 3 array expansions guarded with ${a[@]+"${a[@]}"}, static regression test for both installers; host: old install.sh under docker bash:3.2 -> 2 unbound errors + empty keybinding list, fixed -> 0 errors, llmtr paths kept |
 | M14-cursor-spike | Cursor spike worker (Claude Code on the host, Opus 5.5, interactive) | host worktree ../llmtr-m14 | 2026-10-29 11:58 | 2026-10-31 | 0 (orchestrator review PASS) | merged | 51 runs, 0 x 429; C0-C11: 8 PASS, 3 PARTIAL (injection dropped lines 1/3, cancel hung once, no 409 agent_busy); fresh agent + stream 5.8-13.9 s, nano fastest; needs Cursor "Privacy Mode" (not Legacy); DELETE median 11.7 s; sbx blocks api.cursor.com; verdict go (opt-in engine); reruns: 3 |
+| M15-cursor-engine | Integration worker (claude in sbx, Sonnet) | sbx llmtr-m15b | 2026-10-31 15:56 | 16:09 | 0 (orchestrator review PASS, 2 minor) | merged | reruns: none; first sandbox llmtr-m15 failed on an expired sandbox login (user re-login); 601 tests (+127), also with LLMTR_UNAME=Darwin; host real API: pytest -m cursor 6.3 s, CLI EN->PL 4.6 s, both agents deleted by the detached child ~30 s later, sweep list (items, ISO createdAt) OK; minor: cleanup child ignores --config, "Cancelled." waits up to cancel_timeout (5 s) |
 
 ## Lessons
 
@@ -83,3 +84,7 @@ idempotent `install.sh`.
 - Acceptance reports must separate **observation** from **explanation**: M12 guessed a cause
   ("Cancelled. comes from the second run") without a trace, and it nearly became a code change.
   Before fixing a UI symptom, capture a trace of which process sent what.
+- The sandbox Claude login (done once in a sandbox on 2026-10-04 and shared by all sandboxes)
+  expires: on 2026-10-31 even a fresh sandbox failed with "OAuth session expired". Fix: the user
+  runs `sbx run --name <sandbox>` and `/login` once; check with a `claude -p "reply with: ok"`
+  before launching a worker.

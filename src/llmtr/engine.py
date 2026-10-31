@@ -39,6 +39,8 @@ class Job:
     """translate only: e.g. ``"en"``."""
     tone: TonePreset | None = None
     """tone only."""
+    engine: str = "ollama"
+    """v3: ``"ollama"`` or ``"cursor"``; ``cli.py`` picks the client from it."""
 
 
 def plan_job(
@@ -49,8 +51,14 @@ def plan_job(
     tone: TonePreset | None = None,
     quality: bool = False,
     model: str | None = None,
+    engine: str | None = None,
 ) -> Job:
     """Choose the model and build the prompt (pure, no I/O).
+
+    ``engine`` (``None`` -> ``config.engine``) selects the backend. For ``"cursor"`` (v3,
+    architecture section 23) the model is ``model or config.cursor.model`` (``quality`` is
+    ignored), the limit is ``config.cursor.max_chars``, and the messages are the single user
+    message of ``prompts.build_cursor_messages``. Everything below describes the Ollama engine.
 
     - model: ``model`` if given, else ``models.translate_quality`` when ``quality`` and mode is
       translate, else ``models.<mode>``;
@@ -64,10 +72,13 @@ def plan_job(
         EmptySelection: ``text.strip()`` is empty.
         TextTooLong: ``len(text) > config.ollama.max_chars``.
     """
+    chosen_engine = engine if engine is not None else config.engine
+    cursor = chosen_engine == "cursor"
+    max_chars = config.cursor.max_chars if cursor else config.ollama.max_chars
     if not text.strip():
         raise EmptySelection()
-    if len(text) > config.ollama.max_chars:
-        raise TextTooLong(len(text), config.ollama.max_chars)
+    if len(text) > max_chars:
+        raise TextTooLong(len(text), max_chars)
 
     source_lang: str | None = None
     target_lang: str | None = None
@@ -93,6 +104,12 @@ def plan_job(
     else:
         raise ValueError(f"unknown mode: {mode}")
 
+    if cursor:
+        chosen_model = model or config.cursor.model
+        messages = prompts.build_cursor_messages(
+            mode.value, text, source=source_lang, target=target_lang, tone=chosen_tone
+        )
+
     return Job(
         mode=mode,
         model=chosen_model,
@@ -101,23 +118,26 @@ def plan_job(
         source_lang=source_lang,
         target_lang=target_lang,
         tone=chosen_tone,
+        engine=chosen_engine,
     )
 
 
 def progress_text(job: Job) -> tuple[str, str]:
     """``(summary, body)`` for the progress notification, e.g.
     ``("Translating PL → EN…", "translategemma:12b")``, ``("Fixing grammar…", "gemma3")``,
-    ``("Rewriting: team…", "gemma3")``.
+    ``("Rewriting: team…", "gemma3")``. With the cursor engine the body is
+    ``"{model} (Cursor)"``, e.g. ``"gpt-5.4-nano (Cursor)"``.
     """
+    body = f"{job.model} (Cursor)" if job.engine == "cursor" else job.model
     if job.mode == Mode.TRANSLATE:
         source = (job.source_lang or "").upper()
         target = (job.target_lang or "").upper()
-        return f"Translating {source} → {target}…", job.model
+        return f"Translating {source} → {target}…", body
     if job.mode == Mode.FIX:
-        return "Fixing grammar…", job.model
+        return "Fixing grammar…", body
     if job.mode == Mode.TONE:
         name = job.tone.name if job.tone else ""
-        return f"Rewriting: {name}…", job.model
+        return f"Rewriting: {name}…", body
     raise ValueError(f"unknown mode: {job.mode}")
 
 

@@ -204,6 +204,73 @@ shown.
 State (the current tone preset) lives in `~/.local/state/llmtr/state.toml`; the last result is
 cached in `~/.cache/llmtr/last.txt`. All of these respect the usual `XDG_*` environment variables.
 
+## Cursor engine (optional)
+
+llmtr can send the text to a [Cursor](https://cursor.com) cloud agent instead of Ollama, for
+setups where Cursor is the only allowed AI tool. Ollama stays the default.
+
+**Privacy first.** With this engine the selected text **leaves your machine**. It is sent to
+Cursor's cloud and runs in a cloud agent, and Cursor stores it (storage mode is required). llmtr
+deletes the agent after each call, but Cursor's own retention rules apply. Don't use this engine
+for text you may not send to Cursor. Usage counts against your Cursor plan (each call carries
+about 16k cached tokens of agent context).
+
+**Requirements.** A Cursor plan with Cloud Agents. In Cursor Settings → Privacy, choose
+**"Privacy Mode"**; "Privacy Mode (Legacy)" blocks API agents.
+
+**API key, Linux.** Create a key in Cursor Dashboard → API Keys, then create an empty file that
+only you can read and paste the key into it with an editor:
+
+```bash
+install -m 600 /dev/null ~/.config/llmtr/cursor-api-key
+```
+
+llmtr refuses a key file that others can read. `CURSOR_API_KEY` in the environment overrides
+the file.
+
+**API key, macOS.** Store it in the Keychain; the command prompts for the key, so it stays out of
+your shell history:
+
+```bash
+security add-generic-password -s llmtr-cursor -a "$USER" -w
+```
+
+The key file above also works on macOS.
+
+**Config.**
+
+```toml
+engine = "cursor"
+
+[cursor]
+model = "gpt-5.4-nano"   # or "auto" for your account's default model
+```
+
+To try it without changing the config:
+`echo "Dzień dobry" | llmtr translate --engine cursor --stdin`. `--model` overrides
+`cursor.model`; `--quality` has no effect with this engine. Other keys: `timeout` (60 s),
+`max_chars` (8000).
+
+**What to expect.** About 6–14 s per call, from a sentence to about 220 words. The result
+appears all at once (no streaming into the window). At most about 6 calls a minute (Cursor's rate
+limit). Agents are deleted in the background, a few seconds to a minute after the paste; leftover
+`llmtr-…` agents are removed at most once an hour, or now with `llmtr cursor-cleanup`.
+
+**Troubleshooting.**
+
+| Message | Fix |
+| --- | --- |
+| `No Cursor API key. Put it in … (mode 600).` | Create the key file (or the Keychain item on macOS) as above. |
+| `Cursor API key file is readable by others. Run: chmod 600 …` | Run the `chmod` shown. |
+| `Cursor rejected the API key. …` | The key is wrong or revoked: create a new one in Cursor Dashboard → API Keys. |
+| `Cursor agents need storage: set Cursor Privacy to "Privacy Mode" (not Legacy).` | Change Cursor Settings → Privacy to "Privacy Mode". |
+| `Cursor model … is not available. Check cursor.model in config.toml.` | Use a model your plan has, or `model = "auto"`. |
+| `Cursor rate limit reached. Try again in … s.` | Wait and retry; keep to about 6 calls a minute. |
+| `Can't reach the Cursor API. Check your connection.` | Check the network (and any proxy); Cursor may be down. |
+| `Cursor did not answer within 60 s. Try again.` | Retry; for long texts raise `[cursor] timeout`. |
+| `Cursor agent failed.` | The cloud run failed or was cancelled; retry. |
+| `Cursor refused the request.` | See `llmtr log` for the HTTP status and body. |
+
 ## Tone presets
 
 `[[tone.preset]]` entries add presets after the built-in `team` preset (a preset named `team`

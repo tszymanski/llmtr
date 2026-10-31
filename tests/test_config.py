@@ -404,3 +404,95 @@ def test_notify_backend_invalid_value_is_config_error() -> None:
 def test_notify_backend_wrong_type_is_config_error() -> None:
     with pytest.raises(ConfigError):
         config.parse_config({"notify": {"backend": 3}})
+
+
+# --- v3: engine and [cursor] (M15) -----------------------------------------------------------
+
+
+def test_engine_and_cursor_defaults() -> None:
+    cfg = config.parse_config({}, env={})
+    assert cfg.engine == "ollama"
+    assert cfg.cursor == config.CursorConfig()
+    assert cfg.cursor.model == "gpt-5.4-nano"
+    assert cfg.cursor.timeout == 60.0
+    assert cfg.cursor.request_timeout == 10.0
+    assert cfg.cursor.cancel_timeout == 5.0
+    assert cfg.cursor.delete_timeout == 60.0
+    assert cfg.cursor.max_chars == 8000
+    assert cfg.cursor.base_url == "https://api.cursor.com"
+    assert config.Config().engine == "ollama"
+    assert config.Config().cursor == config.CursorConfig()
+
+
+@pytest.mark.parametrize("engine", ["ollama", "cursor"])
+def test_engine_valid_values(engine) -> None:
+    assert config.parse_config({"engine": engine}, env={}).engine == engine
+
+
+@pytest.mark.parametrize("engine", ["Cursor", "openai", "", 1])
+def test_engine_invalid_value_is_config_error(engine) -> None:
+    with pytest.raises(ConfigError):
+        config.parse_config({"engine": engine}, env={})
+
+
+def test_cursor_table_values() -> None:
+    data = {
+        "cursor": {
+            "model": "auto",
+            "timeout": 90,
+            "request_timeout": 7.5,
+            "cancel_timeout": 2,
+            "delete_timeout": 30.0,
+            "max_chars": 4000,
+            "base_url": "https://cursor.example/",
+        }
+    }
+    cursor = config.parse_config(data, env={}).cursor
+    assert cursor == config.CursorConfig(
+        model="auto",
+        timeout=90.0,
+        request_timeout=7.5,
+        cancel_timeout=2.0,
+        delete_timeout=30.0,
+        max_chars=4000,
+        base_url="https://cursor.example",
+    )
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("model", 5),
+        ("timeout", 0),
+        ("timeout", -1),
+        ("timeout", "60"),
+        ("request_timeout", 0),
+        ("cancel_timeout", 0),
+        ("delete_timeout", -5),
+        ("max_chars", 0),
+        ("max_chars", 1.5),
+        ("base_url", "http://api.cursor.com"),
+        ("base_url", "api.cursor.com"),
+        ("base_url", 1),
+    ],
+)
+def test_cursor_invalid_values(key, value) -> None:
+    with pytest.raises(ConfigError) as info:
+        config.parse_config({"cursor": {key: value}}, env={})
+    assert f"cursor.{key}" in info.value.problem
+
+
+def test_cursor_must_be_a_table() -> None:
+    with pytest.raises(ConfigError):
+        config.parse_config({"cursor": "x"}, env={})
+
+
+def test_config_without_cursor_parses_as_before() -> None:
+    data = {"ollama": {"timeout": 30}, "models": {"fix": "x"}, "notify": {"enabled": False}}
+    cfg = config.parse_config(data, env={})
+    expected = config.Config(
+        ollama=config.OllamaConfig(timeout=30.0),
+        models=config.ModelsConfig(fix="x"),
+        notify=config.NotifyConfig(enabled=False),
+    )
+    assert cfg == expected

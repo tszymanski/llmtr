@@ -313,7 +313,7 @@ a smaller translate model for the M1.
 
 ## Cursor engine (v3, spike)
 
-Opened by the user 2026-10-28. Status: **M14 spike done 2026-10-31 (verdict: go, as an opt-in engine); M15 not started.**
+Opened by the user 2026-10-28. Status: **M14 spike done 2026-10-31 (verdict: go, as an opt-in engine); M15 merged 2026-10-31; Linux hotkey and Mac checks pending.**
 
 ### Goal
 
@@ -338,7 +338,13 @@ engine, so the README must say so.
     clean, no tool use. Needs Cursor "Privacy Mode" (storage on), not "Privacy Mode (Legacy)".
     `DELETE` is slow (median 11.7 s), so cleanup must run after the paste. `sbx` blocks
     `api.cursor.com`. Findings and the M15 recommendation: `docs/tasks/M14-cursor-spike.result.md`.
-14. **M15 — Cursor engine** — not planned yet; depends on M14.
+14. **M15 — Cursor engine** (sbx worker, fakes only) — contract `docs/tasks/M15-cursor-engine.md`.
+    Opt-in `engine = "cursor"`, default model `gpt-5.4-nano`; fresh no-repo agent per call, SSE
+    stream, delete in a detached child after the paste, hourly sweep of leftover `llmtr-` agents;
+    key from `CURSOR_API_KEY`, the macOS Keychain (`llmtr-cursor`) or a `0600` file; README privacy
+    note (user decisions 2026-10-31). **Merged 2026-10-31:** 601 tests; real-API test and a CLI
+    translate pass on the host, agents deleted in the background ~30 s later. Pending: Linux hotkey
+    check by the user, Mac check (Keychain from Hammerspoon).
 
 ### Risks (Cursor)
 
