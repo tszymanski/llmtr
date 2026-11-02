@@ -41,6 +41,18 @@ ones, run through Hammerspoon; see [macOS](#macos).
 - `ydotool` ≥ 1.0 with the `ydotoold` user service, for automatic copy/paste keystrokes. Without
   it, llmtr still works in clipboard-only mode (press Ctrl+C first, then the shortcut, then
   Ctrl+V; the shortcut uses whatever is on the clipboard).
+- The "Window Calls" GNOME Shell extension by ickyicky (`window-calls@domandoman.xyz`, not
+  "Window Calls Extended"), if you use per-app key overrides — for example
+  `Ctrl+Shift+C`/`Ctrl+Shift+V` in a terminal, where `Ctrl+C` interrupts instead of copying. On
+  Wayland it is the only way llmtr can see which app has focus; without it overrides are silently
+  ignored and the default keys are used everywhere. Install it from
+  extensions.gnome.org, or with:
+  ```bash
+  gdbus call --session --dest org.gnome.Shell.Extensions --object-path /org/gnome/Shell/Extensions \
+    --method org.gnome.Shell.Extensions.InstallRemoteExtension "window-calls@domandoman.xyz"
+  ```
+  and confirm the dialog (a `NoReply` error from `gdbus` afterwards is harmless). Check it with
+  `gnome-extensions list --enabled | grep window-calls`; if it isn't listed, log out and back in.
 
 ## Install
 
@@ -339,6 +351,11 @@ llmtr translate --model translategemma:27b --stdin < long_text.txt
   listening.
 - **"Model X is not installed. Run: ollama pull X"** — pull the model it names, or point
   `[models]` in your config at one you already have.
+- **"No text selected" in a terminal (Terminator, GNOME Terminal, kitty, ...)** — the default
+  copy key `Ctrl+C` interrupts instead of copying in a terminal. Add a `[[keys.override]]` for
+  the terminal (see [`config.example.toml`](config.example.toml)) and make sure the Window Calls
+  extension is enabled (see [Requirements](#requirements)). The `app` value is the window's
+  `wm_class`, matched case-insensitively (Terminator's is `terminator`).
 - **Shortcuts don't fire** — open GNOME Settings → Keyboard → View and Customize Shortcuts →
   Custom Shortcuts and confirm the five `llmtr ...` entries are there with the expected bindings;
   re-run `./install.sh` to re-register them.
