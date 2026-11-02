@@ -66,8 +66,8 @@ This project tests a multi-agent build. Roles and milestones are in `docs/propos
   work, not a rerun. The limit counts repeated failures of the **same problem**; run
   `uv run ruff format .` and `uv run ruff check --fix .` before the checks, so formatting and
   import-order fixes never count.
-- **Commit trailer:** workers end commits with a `Co-Authored-By` line naming the model they
-  actually run as (sandboxes default to Sonnet), not the orchestrator's model.
+- **No commit trailers:** no `Co-Authored-By` or `Claude-Session` lines on any commit, local or
+  pushed, by workers or the orchestrator.
 - **Hand-back:** the worker ends with a short report in `docs/tasks/<id>.result.md`: what was done,
   test output summary, deviations, reruns, new dependencies, open issues.
 - **Review loop:** at most two fix rounds per task, then back to the orchestrator. Nothing merges
